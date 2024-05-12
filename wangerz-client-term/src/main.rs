@@ -5,12 +5,15 @@ use std::{
     mem,
 };
 
+use chat_client::ChatClientBuilder;
 use crossterm::{
     cursor,
     event::{self},
     style::{self, Stylize},
     terminal, QueueableCommand,
 };
+
+mod chat_client;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum CellStyle {
@@ -195,18 +198,22 @@ impl Drop for Screen {
 
 fn main() -> anyhow::Result<()> {
     let size = terminal::size()?;
+    let mut chat_client = ChatClientBuilder::new()
+        .with_ip("0.0.0.0")
+        .with_port(7878)
+        .connect()?;
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0 * size.1);
     let mut buf_prev = RenderBuffer::new(size.0 * size.1);
     let mut prompt = Prompt::new();
     let _screen = Screen::start(&mut stdout)?;
 
-    loop {
+    while !chat_client.should_quit {
         let event = event::read()?;
 
         match event {
             event::Event::Key(event::KeyEvent { code, .. }) => match code {
-                event::KeyCode::Esc => break,
+                event::KeyCode::Esc => chat_client.should_quit = true,
                 event::KeyCode::Char(ch) => prompt.append(ch),
                 _ => (),
             },
