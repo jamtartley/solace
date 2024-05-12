@@ -2,14 +2,14 @@
 
 use std::{
     io::{self, Write},
-    mem,
+    mem, thread,
 };
 
 use chat_client::ChatClientBuilder;
 use crossterm::{
     cursor::{self, EnableBlinking},
     event,
-    style::{self, Stylize},
+    style::{self, Color, Stylize},
     terminal, QueueableCommand,
 };
 
@@ -47,6 +47,13 @@ impl RenderCell {
             cell_style: CellStyle::Normal,
         }
     }
+
+    fn reset(&mut self) {
+        self.ch = ' ';
+        self.fg = style::Color::White;
+        self.bg = style::Color::Reset;
+        self.cell_style = CellStyle::Normal;
+    }
 }
 
 #[derive(Debug)]
@@ -78,6 +85,10 @@ impl RenderBuffer {
             .filter(|(us, them)| us != them)
             .map(|(_, them)| CellPatch { cell: them.clone() })
             .collect()
+    }
+
+    fn clear(&mut self) {
+        self.cells.iter_mut().for_each(|cell| cell.reset());
     }
 
     fn put_at(
@@ -132,7 +143,7 @@ impl CellPatch {
 }
 
 trait Renderable {
-    fn render_into(&self, buf: &mut RenderBuffer, start: u16, width: u16);
+    fn render_into(&self, buf: &mut RenderBuffer, start: u16);
 }
 
 #[derive(Debug)]
@@ -144,6 +155,7 @@ enum Mode {
 #[derive(Debug)]
 struct Prompt {
     curr: Vec<char>,
+    pos: usize,
     mode: Mode,
 }
 
@@ -151,12 +163,21 @@ impl Prompt {
     fn new() -> Self {
         Self {
             curr: vec![],
+            pos: 0,
             mode: Mode::Insert,
         }
     }
 
-    fn append(&mut self, ch: char) {
-        self.curr.push(ch);
+    fn insert(&mut self, ch: char) {
+        self.curr.insert(self.pos, ch);
+        self.pos += 1;
+    }
+
+    fn remove(&mut self) {
+        if self.pos > 0 {
+            self.pos -= 1;
+            self.curr.remove(self.pos);
+        }
     }
 
     fn handle_key_press(&mut self, ev: event::Event) {
@@ -170,8 +191,9 @@ impl Prompt {
         match ev {
             event::Event::Key(event::KeyEvent { code, .. }) => {
                 match code {
-                    event::KeyCode::Char(ch) => self.append(ch),
+                    event::KeyCode::Char(ch) => self.insert(ch),
                     event::KeyCode::Esc => self.mode = Mode::Normal,
+                    event::KeyCode::Backspace => self.remove(),
                     _ => (),
                 };
             }
@@ -193,29 +215,15 @@ impl Prompt {
 }
 
 impl Renderable for Prompt {
-    fn render_into(&self, buf: &mut RenderBuffer, start: u16, width: u16) {
-        let mut next = start;
-
-        for _ in 0..width {
+    fn render_into(&self, buf: &mut RenderBuffer, start: u16) {
+        for (i, &ch) in self.curr.iter().enumerate() {
             buf.put_at(
-                next,
-                '━',
-                style::Color::White,
-                style::Color::Reset,
-                CellStyle::default(),
-            );
-            next += 1;
-        }
-
-        for (_, &ch) in self.curr.iter().enumerate() {
-            buf.put_at(
-                next,
+                i as u16 + start,
                 ch,
                 style::Color::White,
                 style::Color::Reset,
                 CellStyle::default(),
             );
-            next += 1;
         }
     }
 }
@@ -251,6 +259,8 @@ fn main() -> anyhow::Result<()> {
     let _screen = Screen::start(&mut stdout)?;
 
     while !chat_client.should_quit {
+        buf_curr.clear();
+
         let event = event::read()?;
         prompt.handle_key_press(event.clone());
 
@@ -267,9 +277,19 @@ fn main() -> anyhow::Result<()> {
         }
 
         if let Some(prompt_start_row) = size.1.checked_sub(2) {
-            let prompt_start_i = prompt_start_row * size.0;
+            for i in 0..size.0 {
+                buf_curr.put_at(
+                    prompt_start_row * size.0 + i,
+                    '━',
+                    style::Color::White,
+                    style::Color::Reset,
+                    CellStyle::Normal,
+                );
+            }
 
-            prompt.render_into(&mut buf_curr, prompt_start_i, size.0);
+            let prompt_start_i = (prompt_start_row + 1) * size.0;
+
+            prompt.render_into(&mut buf_curr, prompt_start_i);
         }
 
         let diff = buf_prev.diff(&buf_curr);
@@ -279,6 +299,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         stdout
+            .queue(cursor::MoveTo(prompt.curr.len() as u16, size.1 - 1))?
             .queue(match prompt.mode {
                 Mode::Insert => cursor::SetCursorStyle::SteadyBar,
                 Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
@@ -286,6 +307,8 @@ fn main() -> anyhow::Result<()> {
             .flush()?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);
+
+        thread::sleep(std::time::Duration::from_millis(16));
     }
 
     Ok(())
