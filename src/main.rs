@@ -12,7 +12,7 @@ use std::{
     thread,
 };
 
-type Result<T> = std::result::Result<T, ()>;
+use anyhow::Context;
 
 struct Client {
     conn: Arc<TcpStream>,
@@ -24,50 +24,54 @@ enum Message {
     Sent { from: SocketAddr, bytes: Vec<u8> },
 }
 
-fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> Result<()> {
-    let addr = stream.peer_addr().unwrap();
+fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<()> {
+    let addr = stream
+        .peer_addr()
+        .context("ERROR: Failed to get client socket address")?;
     messages
         .send(Message::ClientConnected {
             author: stream.clone(),
         })
-        .map_err(|e| eprintln!("ERROR: Could not send message from {addr}: {e}"))?;
+        .context("ERROR: Could not send message from {addr}:")?;
 
     let mut buf = vec![0; 64];
 
     loop {
-        let n = stream.as_ref().read(&mut buf).map_err(|e| {
-            eprintln!("ERROR: Could not read message from {addr}: {e}");
-
-            let _ = messages
-                .send(Message::ClientDisconnected { addr })
-                .map_err(|e| eprintln!("ERROR: Could not send message: {e}"));
-        })?;
-
-        if n > 0 {
-            let mut bytes = Vec::new();
-
-            for x in &buf[0..n] {
-                if *x >= 32 {
-                    bytes.push(*x);
-                }
+        match stream.as_ref().read(&mut buf) {
+            Ok(0) => {
+                let _ = messages
+                    .send(Message::ClientDisconnected { addr })
+                    .context("ERROR: Could not send disconnected message to client {addr}");
+                break;
             }
+            Ok(n) => {
+                let bytes = buf[0..n]
+                    .iter()
+                    .filter(|&x| *x >= 32)
+                    .cloned()
+                    .collect::<Vec<u8>>();
 
-            let _ = messages
-                .send(Message::Sent { from: addr, bytes })
-                .map_err(|e| eprintln!("ERROR: Could not send message: {e}"));
-        } else {
-            let _ = messages
-                .send(Message::ClientDisconnected { addr })
-                .map_err(|e| eprintln!("ERROR: Could not send message: {e}"));
+                if bytes.to_owned().is_empty() {
+                    continue;
+                }
 
-            break;
+                let _ = messages
+                    .send(Message::Sent { from: addr, bytes })
+                    .context("ERROR: Could not send message")?;
+            }
+            Err(_) => {
+                let _ = messages
+                    .send(Message::ClientDisconnected { addr })
+                    .context("ERROR: Could not read message and disconnected client")?;
+                break;
+            }
         }
     }
 
     Ok(())
 }
 
-fn server(messages: Receiver<Message>) -> Result<()> {
+fn server(messages: Receiver<Message>) -> anyhow::Result<()> {
     let mut clients = HashMap::<SocketAddr, Client>::new();
 
     loop {
@@ -75,7 +79,9 @@ fn server(messages: Receiver<Message>) -> Result<()> {
 
         match message {
             Message::ClientConnected { author } => {
-                let addr = author.peer_addr().unwrap();
+                let addr = author
+                    .peer_addr()
+                    .context("ERROR: Failed to get client socket address")?;
                 clients.insert(
                     addr,
                     Client {
@@ -96,11 +102,9 @@ fn server(messages: Receiver<Message>) -> Result<()> {
                         println!("INFO: Client {from} sent message: {message:?}");
 
                         for (addr, client) in clients.iter() {
-                            println!("{addr}");
                             if *addr != from {
-                                let _ = writeln!(client.conn.as_ref(), "{message}").map_err(|e| {
-                                        eprintln!("ERROR: could not broadcast message to all the clients from {from}: {e}");
-                                    });
+                                let _ = writeln!(client.conn.as_ref(), "{message}")
+                                    .context("ERROR: could not broadcast message to all the clients from {from}:")?;
                             }
                         }
                     }
@@ -110,23 +114,25 @@ fn server(messages: Receiver<Message>) -> Result<()> {
     }
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> anyhow::Result<()> {
     const PORT: i32 = 7878;
     let addr = &format!("0.0.0.0:{PORT}");
-    let listener = TcpListener::bind(addr)?;
+    let listener = TcpListener::bind(addr).context("ERROR: Failed to bind to {PORT}")?;
 
     println!("INFO: Server listening on {addr}");
 
-    let (sender, receiver) = channel();
-    thread::spawn(|| server(receiver));
+    let (tx, rx) = channel();
+    thread::spawn(|| server(rx));
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let stream = Arc::new(stream);
-                let sender = sender.clone();
+                let sender = tx.clone();
 
-                thread::spawn(|| client(stream, sender));
+                thread::spawn(|| {
+                    client(stream, sender).context("ERROR: Error spawning client thread")
+                });
             }
             Err(e) => eprintln!("ERROR: could not accept connection: {e}"),
         }
