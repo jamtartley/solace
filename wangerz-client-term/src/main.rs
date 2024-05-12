@@ -2,7 +2,11 @@
 
 use std::io;
 
-use crossterm::{cursor, event, style, terminal, ExecutableCommand, QueueableCommand};
+use crossterm::{
+    cursor, event, style,
+    terminal::{self, enable_raw_mode},
+    ExecutableCommand, QueueableCommand,
+};
 
 #[derive(Clone, Debug)]
 enum CellStyle {
@@ -36,21 +40,19 @@ struct RenderBuffer {
 }
 
 impl RenderBuffer {
-    fn new(size: usize) -> Self {
-        let cells = vec![RenderCell::default(); size];
+    fn new(size: u16) -> Self {
+        let cells = vec![RenderCell::default(); size as usize];
 
         Self { cells }
     }
 
-    fn put_at(&mut self, i: usize, ch: char) {
-        self.cells[i].ch = ch;
+    fn put_at(&mut self, i: u16, ch: char) {
+        self.cells[i as usize].ch = ch;
     }
 
-    fn render(&self, stdout: &mut io::Stdout) -> anyhow::Result<()> {
-        let width = 20;
-
+    fn render(&self, stdout: &mut io::Stdout, width: u16) -> anyhow::Result<()> {
         for (i, cell) in self.cells.iter().enumerate() {
-            let (row, col) = ((i / width) as u16, (i % width) as u16);
+            let (row, col) = ((i as u16 / width), (i as u16 % width));
 
             stdout
                 .queue(cursor::MoveTo(col, row))?
@@ -62,7 +64,7 @@ impl RenderBuffer {
 }
 
 trait Renderable {
-    fn render_into(&self, buf: &mut RenderBuffer, start: usize);
+    fn render_into(&self, buf: &mut RenderBuffer, start: u16, width: u16);
 }
 
 #[derive(Debug)]
@@ -81,23 +83,45 @@ impl Prompt {
 }
 
 impl Renderable for Prompt {
-    fn render_into(&self, buf: &mut RenderBuffer, start: usize) {
-        for (i, &ch) in self.curr.iter().enumerate() {
-            buf.put_at(start + i, ch)
+    fn render_into(&self, buf: &mut RenderBuffer, start: u16, width: u16) {
+        let mut next = start;
+
+        for _ in 0..width {
+            buf.put_at(next, '━');
+            next += 1;
         }
+
+        for (_, &ch) in self.curr.iter().enumerate() {
+            buf.put_at(next, ch);
+            next += 1;
+        }
+    }
+}
+
+struct Screen;
+
+impl Screen {
+    fn start(stdout: &mut io::Stdout) -> anyhow::Result<Self> {
+        crossterm::execute!(stdout, terminal::EnterAlternateScreen)?;
+        terminal::enable_raw_mode()?;
+
+        Ok(Self)
+    }
+}
+
+impl Drop for Screen {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode().unwrap();
+        let _ = crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
     }
 }
 
 fn main() -> anyhow::Result<()> {
     let size = terminal::size()?;
-    let mut buf = RenderBuffer::new(size.0 as usize * size.1 as usize);
+    let mut buf = RenderBuffer::new(size.0 * size.1);
     let mut prompt = Prompt::new();
     let mut stdout = io::stdout();
-
-    terminal::enable_raw_mode()?;
-    stdout
-        .execute(terminal::EnterAlternateScreen)?
-        .execute(terminal::DisableLineWrap)?;
+    let _screen = Screen::start(&mut stdout)?;
 
     loop {
         let event = event::read()?;
@@ -111,13 +135,13 @@ fn main() -> anyhow::Result<()> {
             _ => (),
         }
 
-        prompt.render_into(&mut buf, 0);
+        let prompt_start_row = size.1 - 2;
+        let prompt_start_i = prompt_start_row * size.0;
 
-        let _ = buf.render(&mut stdout)?;
+        prompt.render_into(&mut buf, prompt_start_i, size.0);
+
+        let _ = buf.render(&mut stdout, size.0)?;
     }
-
-    stdout.execute(terminal::LeaveAlternateScreen)?;
-    terminal::disable_raw_mode()?;
 
     Ok(())
 }
