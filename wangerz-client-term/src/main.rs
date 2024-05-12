@@ -7,8 +7,8 @@ use std::{
 
 use chat_client::ChatClientBuilder;
 use crossterm::{
-    cursor,
-    event::{self},
+    cursor::{self, EnableBlinking},
+    event,
     style::{self, Stylize},
     terminal, QueueableCommand,
 };
@@ -136,13 +136,23 @@ trait Renderable {
 }
 
 #[derive(Debug)]
+enum Mode {
+    Normal,
+    Insert,
+}
+
+#[derive(Debug)]
 struct Prompt {
     curr: Vec<char>,
+    mode: Mode,
 }
 
 impl Prompt {
     fn new() -> Self {
-        Self { curr: vec![] }
+        Self {
+            curr: vec![],
+            mode: Mode::Insert,
+        }
     }
 
     fn append(&mut self, ch: char) {
@@ -150,15 +160,35 @@ impl Prompt {
     }
 
     fn handle_key_press(&mut self, ev: event::Event) {
+        match self.mode {
+            Mode::Insert => self.handle_insert(ev),
+            Mode::Normal => self.handle_normal(ev),
+        }
+    }
+
+    fn handle_insert(&mut self, ev: event::Event) {
         match ev {
             event::Event::Key(event::KeyEvent { code, .. }) => {
                 match code {
                     event::KeyCode::Char(ch) => self.append(ch),
+                    event::KeyCode::Esc => self.mode = Mode::Normal,
                     _ => (),
                 };
             }
             _ => (),
         };
+    }
+
+    fn handle_normal(&mut self, ev: event::Event) {
+        match ev {
+            event::Event::Key(event::KeyEvent { code, .. }) => {
+                match code {
+                    event::KeyCode::Char('i') => self.mode = Mode::Insert,
+                    _ => (),
+                };
+            }
+            _ => (),
+        }
     }
 }
 
@@ -248,7 +278,12 @@ fn main() -> anyhow::Result<()> {
             patch.render(&mut stdout, size.0)?;
         }
 
-        stdout.flush()?;
+        stdout
+            .queue(match prompt.mode {
+                Mode::Insert => cursor::SetCursorStyle::SteadyBar,
+                Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
+            })?
+            .flush()?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);
     }
