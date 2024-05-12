@@ -7,9 +7,8 @@ use std::{
 
 use chat_client::ChatClientBuilder;
 use crossterm::{
-    cursor::{self, EnableBlinking},
-    event,
-    style::{self, Color, Stylize},
+    cursor, event,
+    style::{self, Stylize},
     terminal, QueueableCommand,
 };
 
@@ -180,37 +179,33 @@ impl Prompt {
         }
     }
 
-    fn handle_key_press(&mut self, ev: event::Event) {
+    fn handle_key_press(&mut self, key_code: event::KeyCode) {
         match self.mode {
-            Mode::Insert => self.handle_insert(ev),
-            Mode::Normal => self.handle_normal(ev),
+            Mode::Insert => self.handle_insert(key_code),
+            Mode::Normal => self.handle_normal(key_code),
         }
     }
 
-    fn handle_insert(&mut self, ev: event::Event) {
-        match ev {
-            event::Event::Key(event::KeyEvent { code, .. }) => {
-                match code {
-                    event::KeyCode::Char(ch) => self.insert(ch),
-                    event::KeyCode::Esc => self.mode = Mode::Normal,
-                    event::KeyCode::Backspace => self.remove(),
-                    _ => (),
-                };
-            }
+    fn handle_insert(&mut self, key_code: event::KeyCode) {
+        match key_code {
+            event::KeyCode::Char(ch) => self.insert(ch),
+            event::KeyCode::Esc => self.mode = Mode::Normal,
+            event::KeyCode::Backspace => self.remove(),
+            _ => (),
+        }
+    }
+
+    fn handle_normal(&mut self, key_code: event::KeyCode) {
+        match key_code {
+            event::KeyCode::Char('i') => self.mode = Mode::Insert,
             _ => (),
         };
     }
 
-    fn handle_normal(&mut self, ev: event::Event) {
-        match ev {
-            event::Event::Key(event::KeyEvent { code, .. }) => {
-                match code {
-                    event::KeyCode::Char('i') => self.mode = Mode::Insert,
-                    _ => (),
-                };
-            }
-            _ => (),
-        }
+    fn clear(&mut self) {
+        self.curr.clear();
+        self.pos = 0;
+        self.mode = Mode::Insert;
     }
 }
 
@@ -261,17 +256,22 @@ fn main() -> anyhow::Result<()> {
     while !chat_client.should_quit {
         buf_curr.clear();
 
-        let event = event::read()?;
-        prompt.handle_key_press(event.clone());
-
-        match event {
+        match event::read()? {
             event::Event::Key(event::KeyEvent {
                 code, modifiers, ..
             }) => match code {
                 event::KeyCode::Char('c') if modifiers.contains(event::KeyModifiers::CONTROL) => {
                     chat_client.should_quit = true
                 }
-                _ => (),
+                event::KeyCode::Enter => {
+                    let to_send = prompt.curr.iter().collect::<String>();
+
+                    // @CLEANUP: Maybe render an error message in the log if not?
+                    if chat_client.write(to_send).is_ok() {
+                        prompt.clear();
+                    }
+                }
+                _ => prompt.handle_key_press(code),
             },
             _ => (),
         }

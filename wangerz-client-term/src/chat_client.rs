@@ -1,4 +1,4 @@
-use std::net::TcpStream;
+use std::{io::Write, net::TcpStream};
 
 #[derive(Default)]
 pub struct ChatClientBuilder<'a> {
@@ -42,4 +42,14 @@ impl<'a> ChatClientBuilder<'a> {
 pub(crate) struct ChatClient {
     stream: Option<TcpStream>,
     pub(crate) should_quit: bool,
+}
+
+impl ChatClient {
+    pub(crate) fn write(&mut self, value: String) -> anyhow::Result<()> {
+        if let Some(tcp_stream) = self.stream.as_mut() {
+            tcp_stream.write(value.as_bytes())?;
+        }
+
+        Ok(())
+    }
 }
