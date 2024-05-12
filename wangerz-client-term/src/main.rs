@@ -1,65 +1,89 @@
 #![allow(dead_code)]
 
-use std::io;
+use std::io::{self, prelude::*};
 
 use crossterm::{
-    cursor, event, style,
-    terminal::{self, enable_raw_mode},
-    ExecutableCommand, QueueableCommand,
+    cursor, event,
+    style::{self, Stylize},
+    terminal, QueueableCommand,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum CellStyle {
     Bold,
     Italic,
     Normal,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct RenderCell {
+    pos: u16,
     ch: char,
     fg: style::Color,
     bg: style::Color,
     cell_style: CellStyle,
 }
 
-impl Default for RenderCell {
-    fn default() -> Self {
+impl RenderCell {
+    fn new(pos: u16) -> Self {
         Self {
+            pos,
             ch: ' ',
             fg: style::Color::White,
-            bg: style::Color::Black,
+            bg: style::Color::Reset,
             cell_style: CellStyle::Normal,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct RenderBuffer {
     cells: Vec<RenderCell>,
 }
 
+#[derive(Debug)]
+struct CellPatch {
+    cell: RenderCell,
+}
+
+impl CellPatch {
+    fn render(&self, stdout: &mut io::Stdout, width: u16) -> anyhow::Result<()> {
+        let (row, col) = ((self.cell.pos / width), (self.cell.pos % width));
+
+        stdout
+            .queue(cursor::MoveTo(col, row))?
+            .queue(style::PrintStyledContent(
+                self.cell.ch.with(self.cell.fg).on(self.cell.bg),
+            ))?;
+
+        Ok(())
+    }
+}
+
 impl RenderBuffer {
     fn new(size: u16) -> Self {
-        let cells = vec![RenderCell::default(); size as usize];
+        let mut cells = vec![];
+
+        for i in 0..size {
+            cells.push(RenderCell::new(i));
+        }
 
         Self { cells }
     }
 
-    fn put_at(&mut self, i: u16, ch: char) {
-        self.cells[i as usize].ch = ch;
+    fn diff(&self, other: &RenderBuffer) -> Vec<CellPatch> {
+        assert!(self.cells.len() == other.cells.len());
+
+        self.cells
+            .iter()
+            .zip(other.cells.iter())
+            .filter(|(us, them)| us != them)
+            .map(|(_, them)| CellPatch { cell: them.clone() })
+            .collect()
     }
 
-    fn render(&self, stdout: &mut io::Stdout, width: u16) -> anyhow::Result<()> {
-        for (i, cell) in self.cells.iter().enumerate() {
-            let (row, col) = ((i as u16 / width), (i as u16 % width));
-
-            stdout
-                .queue(cursor::MoveTo(col, row))?
-                .queue(style::Print(cell.ch))?;
-        }
-
-        Ok(())
+    fn put_at(&mut self, i: u16, ch: char) {
+        self.cells[i as usize].ch = ch;
     }
 }
 
@@ -118,7 +142,8 @@ impl Drop for Screen {
 
 fn main() -> anyhow::Result<()> {
     let size = terminal::size()?;
-    let mut buf = RenderBuffer::new(size.0 * size.1);
+    let mut buf_curr = RenderBuffer::new(size.0 * size.1);
+    let mut buf_prev = RenderBuffer::new(size.0 * size.1);
     let mut prompt = Prompt::new();
     let mut stdout = io::stdout();
     let _screen = Screen::start(&mut stdout)?;
@@ -138,9 +163,17 @@ fn main() -> anyhow::Result<()> {
         let prompt_start_row = size.1 - 2;
         let prompt_start_i = prompt_start_row * size.0;
 
-        prompt.render_into(&mut buf, prompt_start_i, size.0);
+        prompt.render_into(&mut buf_curr, prompt_start_i, size.0);
 
-        let _ = buf.render(&mut stdout, size.0)?;
+        let diff = buf_prev.diff(&buf_curr);
+
+        for patch in &diff {
+            patch.render(&mut stdout, size.0)?;
+        }
+
+        // let _ = buf_curr.render(&mut stdout, size.0)?;
+
+        buf_prev = buf_curr.clone();
     }
 
     Ok(())
