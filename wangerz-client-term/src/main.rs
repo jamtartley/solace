@@ -148,6 +148,18 @@ impl Prompt {
     fn append(&mut self, ch: char) {
         self.curr.push(ch);
     }
+
+    fn handle_key_press(&mut self, ev: event::Event) {
+        match ev {
+            event::Event::Key(event::KeyEvent { code, .. }) => {
+                match code {
+                    event::KeyCode::Char(ch) => self.append(ch),
+                    _ => (),
+                };
+            }
+            _ => (),
+        };
+    }
 }
 
 impl Renderable for Prompt {
@@ -210,11 +222,15 @@ fn main() -> anyhow::Result<()> {
 
     while !chat_client.should_quit {
         let event = event::read()?;
+        prompt.handle_key_press(event.clone());
 
         match event {
-            event::Event::Key(event::KeyEvent { code, .. }) => match code {
-                event::KeyCode::Esc => chat_client.should_quit = true,
-                event::KeyCode::Char(ch) => prompt.append(ch),
+            event::Event::Key(event::KeyEvent {
+                code, modifiers, ..
+            }) => match code {
+                event::KeyCode::Char('c') if modifiers.contains(event::KeyModifiers::CONTROL) => {
+                    chat_client.should_quit = true
+                }
                 _ => (),
             },
             _ => (),
