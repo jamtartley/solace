@@ -21,7 +21,7 @@ struct Client {
 enum Message {
     ClientConnected { author: Arc<TcpStream> },
     ClientDisconnected { addr: SocketAddr },
-    Sent { from: SocketAddr, bytes: Vec<u8> },
+    Sent { from: SocketAddr, message: String },
 }
 
 fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<()> {
@@ -51,13 +51,21 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<(
                     .cloned()
                     .collect::<Vec<u8>>();
 
-                if bytes.to_owned().is_empty() {
-                    continue;
-                }
+                match str::from_utf8(&bytes) {
+                    Ok(message) => {
+                        if message.is_empty() {
+                            continue;
+                        }
 
-                let _ = messages
-                    .send(Message::Sent { from: addr, bytes })
-                    .context("ERROR: Could not send message")?;
+                        let _ = messages
+                            .send(Message::Sent {
+                                from: addr,
+                                message: message.to_string(),
+                            })
+                            .context("ERROR: Could not send message")?;
+                    }
+                    Err(e) => eprintln!("ERROR: Could not decode message into UTF-8: {e}"),
+                }
             }
             Err(_) => {
                 let _ = messages
@@ -96,16 +104,14 @@ fn server(messages: Receiver<Message>) -> anyhow::Result<()> {
 
                 println!("INFO: Client {addr} disconnected");
             }
-            Message::Sent { from, bytes } => {
-                if clients.get_mut(&from).is_some() {
-                    if let Ok(message) = str::from_utf8(&bytes) {
-                        println!("INFO: Client {from} sent message: {message:?}");
+            Message::Sent { from, message } => {
+                if clients.get(&from).is_some() {
+                    println!("INFO: Client {from} sent message: {message:?}");
 
-                        for (addr, client) in clients.iter() {
-                            if *addr != from {
-                                let _ = writeln!(client.conn.as_ref(), "{message}")
+                    for (addr, client) in clients.iter() {
+                        if *addr != from {
+                            let _ = writeln!(client.conn.as_ref(), "{message}")
                                     .context("ERROR: could not broadcast message to all the clients from {from}:")?;
-                            }
                         }
                     }
                 }
