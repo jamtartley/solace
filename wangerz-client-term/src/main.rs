@@ -3,6 +3,7 @@
 use std::{
     io::{self, Write},
     mem, thread,
+    time::Duration,
 };
 
 use chat_client::ChatClientBuilder;
@@ -58,11 +59,12 @@ impl RenderCell {
 #[derive(Debug)]
 struct RenderBuffer {
     cells: Vec<RenderCell>,
+    width: u16,
     stdout: io::Stdout,
 }
 
 impl RenderBuffer {
-    fn new(size: u16) -> Self {
+    fn new(size: u16, width: u16) -> Self {
         let mut cells = vec![];
 
         for i in 0..size {
@@ -71,6 +73,7 @@ impl RenderBuffer {
 
         Self {
             cells,
+            width,
             stdout: io::stdout(),
         }
     }
@@ -248,67 +251,75 @@ fn main() -> anyhow::Result<()> {
         .with_port(7878)
         .connect()?;
     let mut stdout = io::stdout();
-    let mut buf_curr = RenderBuffer::new(size.0 * size.1);
-    let mut buf_prev = RenderBuffer::new(size.0 * size.1);
+    let mut buf_curr = RenderBuffer::new(size.0 * size.1, size.0);
+    let mut buf_prev = RenderBuffer::new(size.0 * size.1, size.0);
     let mut prompt = Prompt::new();
     let _screen = Screen::start(&mut stdout)?;
 
     while !chat_client.should_quit {
         buf_curr.clear();
 
-        match event::read()? {
-            event::Event::Key(event::KeyEvent {
-                code, modifiers, ..
-            }) => match code {
-                event::KeyCode::Char('c') if modifiers.contains(event::KeyModifiers::CONTROL) => {
-                    chat_client.should_quit = true
-                }
-                event::KeyCode::Enter => {
-                    let to_send = prompt.curr.iter().collect::<String>();
-
-                    // @CLEANUP: Maybe render an error message in the log if not?
-                    if chat_client.write(to_send).is_ok() {
-                        prompt.clear();
+        while event::poll(Duration::ZERO)? {
+            match event::read()? {
+                event::Event::Key(event::KeyEvent {
+                    code, modifiers, ..
+                }) => match code {
+                    event::KeyCode::Char('c')
+                        if modifiers.contains(event::KeyModifiers::CONTROL) =>
+                    {
+                        chat_client.should_quit = true
                     }
-                }
-                _ => prompt.handle_key_press(code),
-            },
-            _ => (),
-        }
+                    event::KeyCode::Enter => {
+                        let to_send = prompt.curr.iter().collect::<String>();
 
-        if let Some(prompt_start_row) = size.1.checked_sub(2) {
-            for i in 0..size.0 {
-                buf_curr.put_at(
-                    prompt_start_row * size.0 + i,
-                    '━',
-                    style::Color::White,
-                    style::Color::Reset,
-                    CellStyle::Normal,
-                );
+                        // @CLEANUP: Maybe render an error message in the log if not?
+                        if chat_client.write(to_send).is_ok() {
+                            prompt.clear();
+                        }
+                    }
+                    _ => prompt.handle_key_press(code),
+                },
+                _ => (),
             }
 
-            let prompt_start_i = (prompt_start_row + 1) * size.0;
+            chat_client.read()?;
 
-            prompt.render_into(&mut buf_curr, prompt_start_i);
+            chat_client.history.render_into(&mut buf_curr, 0);
+
+            if let Some(prompt_start_row) = size.1.checked_sub(2) {
+                for i in 0..size.0 {
+                    buf_curr.put_at(
+                        prompt_start_row * size.0 + i,
+                        '━',
+                        style::Color::White,
+                        style::Color::Reset,
+                        CellStyle::Normal,
+                    );
+                }
+
+                let prompt_start_i = (prompt_start_row + 1) * size.0;
+
+                prompt.render_into(&mut buf_curr, prompt_start_i);
+            }
+
+            let diff = buf_prev.diff(&buf_curr);
+
+            for patch in &diff {
+                patch.render(&mut stdout, size.0)?;
+            }
+
+            stdout
+                .queue(cursor::MoveTo(prompt.curr.len() as u16, size.1 - 1))?
+                .queue(match prompt.mode {
+                    Mode::Insert => cursor::SetCursorStyle::SteadyBar,
+                    Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
+                })?
+                .flush()?;
+
+            mem::swap(&mut buf_curr, &mut buf_prev);
+
+            thread::sleep(std::time::Duration::from_millis(16));
         }
-
-        let diff = buf_prev.diff(&buf_curr);
-
-        for patch in &diff {
-            patch.render(&mut stdout, size.0)?;
-        }
-
-        stdout
-            .queue(cursor::MoveTo(prompt.curr.len() as u16, size.1 - 1))?
-            .queue(match prompt.mode {
-                Mode::Insert => cursor::SetCursorStyle::SteadyBar,
-                Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
-            })?
-            .flush()?;
-
-        mem::swap(&mut buf_curr, &mut buf_prev);
-
-        thread::sleep(std::time::Duration::from_millis(16));
     }
 
     Ok(())

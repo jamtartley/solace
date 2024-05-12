@@ -108,11 +108,10 @@ fn server(messages: Receiver<Message>) -> anyhow::Result<()> {
                 if clients.get(&from).is_some() {
                     println!("INFO: Client {from} sent message: {message:?}");
 
-                    for (addr, client) in clients.iter() {
-                        if *addr != from {
-                            let _ = writeln!(client.conn.as_ref(), "{message}")
-                                    .context("ERROR: could not broadcast message to all the clients from {from}:")?;
-                        }
+                    for (_, client) in clients.iter_mut() {
+                        let _ = writeln!(client.conn.as_ref(), "{message}").context(
+                            "ERROR: could not broadcast message to all the clients from {from}:",
+                        )?;
                     }
                 }
             }
