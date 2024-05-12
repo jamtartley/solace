@@ -12,7 +12,7 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum CellStyle {
     Bold,
     Italic,
@@ -104,14 +104,25 @@ struct CellPatch {
 
 impl CellPatch {
     fn render(&self, stdout: &mut io::Stdout, width: u16) -> anyhow::Result<()> {
-        let (row, col) = ((self.cell.pos / width), (self.cell.pos % width));
+        let RenderCell {
+            bg,
+            ch,
+            fg,
+            pos,
+            cell_style,
+        } = self.cell;
+        let (row, col) = ((pos / width), (pos % width));
+        let attr = match cell_style {
+            CellStyle::Bold => style::Attribute::Bold,
+            CellStyle::Italic => style::Attribute::Italic,
+            CellStyle::Normal => style::Attribute::NormalIntensity,
+        };
 
         stdout
             .queue(cursor::MoveTo(col, row))?
             .queue(style::PrintStyledContent(
-                self.cell.ch.with(self.cell.fg).on(self.cell.bg),
-            ))?
-            .flush()?;
+                ch.with(fg).on(bg).attribute(attr),
+            ))?;
 
         Ok(())
     }
@@ -213,6 +224,8 @@ fn main() -> anyhow::Result<()> {
         for patch in &diff {
             patch.render(&mut stdout, size.0)?;
         }
+
+        stdout.flush()?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);
     }
