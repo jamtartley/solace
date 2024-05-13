@@ -69,7 +69,6 @@ impl<'a> ChatClientBuilder<'a> {
         Ok(ChatClient {
             history: ChatHistory::default(),
             stream,
-            should_quit: false,
         })
     }
 }
@@ -78,7 +77,6 @@ impl<'a> ChatClientBuilder<'a> {
 pub(crate) struct ChatClient {
     stream: Option<TcpStream>,
     pub(crate) history: ChatHistory,
-    pub(crate) should_quit: bool,
 }
 
 impl ChatClient {

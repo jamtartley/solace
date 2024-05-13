@@ -13,6 +13,8 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 
+use crate::chat_client::ChatClient;
+
 mod chat_client;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -251,18 +253,16 @@ impl Drop for Screen {
 
 fn main() -> anyhow::Result<()> {
     let size = terminal::size()?;
-    let mut chat_client = ChatClientBuilder::new()
-        .with_ip("0.0.0.0")
-        .with_port(7878)
-        .connect()?;
+    let mut chat_client: Option<ChatClient> = None;
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0 * size.1, size.0);
     let mut buf_prev = RenderBuffer::new(size.0 * size.1, size.0);
     let mut prompt = Prompt::new();
+    let mut quit = false;
     let _screen = Screen::start(&mut stdout)?;
     const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
 
-    while !chat_client.should_quit {
+    while !quit {
         if event::poll(FRAME_TIME)? {
             if let event::Event::Key(event::KeyEvent {
                 code, modifiers, ..
@@ -272,14 +272,30 @@ fn main() -> anyhow::Result<()> {
                     event::KeyCode::Char('c')
                         if modifiers.contains(event::KeyModifiers::CONTROL) =>
                     {
-                        chat_client.should_quit = true
+                        quit = true
                     }
                     event::KeyCode::Enter => {
                         let to_send = prompt.curr.iter().collect::<String>();
 
-                        // @CLEANUP: Maybe render an error message in the log if not?
-                        if chat_client.write(to_send).is_ok() {
-                            prompt.clear();
+                        if to_send.starts_with("/connect") {
+                            let mut split = to_send.split(' ');
+                            let ip = split.nth(1).unwrap_or("ERROR: No ip found");
+                            let port: usize = split
+                                .next()
+                                .unwrap_or("ERROR: No port found")
+                                .parse::<usize>()?;
+
+                            chat_client = Some(
+                                ChatClientBuilder::new()
+                                    .with_ip(ip)
+                                    .with_port(port)
+                                    .connect()?,
+                            );
+                        } else if let Some(chat_client) = &mut chat_client {
+                            // @CLEANUP: Maybe render an error message in the log if not?
+                            if chat_client.write(to_send).is_ok() {
+                                prompt.clear();
+                            }
                         }
                     }
                     _ => prompt.handle_key_press(code),
@@ -289,16 +305,18 @@ fn main() -> anyhow::Result<()> {
 
         buf_curr.clear();
 
-        chat_client.read()?;
-        chat_client.history.render_into(
-            &mut buf_curr,
-            &Rect {
-                x: 0,
-                y: 0,
-                width: size.0,
-                height: size.1.checked_sub(2).unwrap_or(0),
-            },
-        );
+        if let Some(chat_client) = &mut chat_client {
+            chat_client.read()?;
+            chat_client.history.render_into(
+                &mut buf_curr,
+                &Rect {
+                    x: 0,
+                    y: 0,
+                    width: size.0,
+                    height: size.1.saturating_sub(2),
+                },
+            );
+        }
 
         if let Some(prompt_start_row) = size.1.checked_sub(2) {
             for i in 0..size.0 {

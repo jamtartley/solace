@@ -57,7 +57,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                             continue;
                         }
 
-                        let _ = messages
+                        messages
                             .send(Message::Sent {
                                 from: addr,
                                 message: message.to_string(),
@@ -68,7 +68,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                 }
             }
             Err(_) => {
-                let _ = messages
+                messages
                     .send(Message::ClientDisconnected { addr })
                     .context("ERROR: Could not read message and disconnected client")?;
                 break;
@@ -109,7 +109,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     for (_, client) in clients.iter_mut() {
-                        let _ = writeln!(client.conn.as_ref(), "{message}").context(
+                        writeln!(client.conn.as_ref(), "{message}").context(
                             "ERROR: could not broadcast message to all the clients from {from}:",
                         )?;
                     }
