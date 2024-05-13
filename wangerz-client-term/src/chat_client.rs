@@ -14,11 +14,17 @@ pub(crate) struct ChatHistory {
 }
 
 impl Renderable for ChatHistory {
-    fn render_into(&self, buf: &mut crate::RenderBuffer, start: u16) {
-        for (i, entry) in self.entries.iter().rev().enumerate() {
+    fn render_into(&self, buf: &mut crate::RenderBuffer, rect: &crate::Rect) {
+        let height = rect.height as usize;
+
+        for (i, entry) in self.entries.iter().rev().take(height).enumerate() {
             for (j, ch) in entry.chars().enumerate() {
+                let x = rect.x + j as u16;
+                let y = rect.y + rect.height - 1 - i as u16;
+
                 buf.put_at(
-                    start - i as u16 * buf.width + j as u16,
+                    x,
+                    y,
                     ch,
                     style::Color::White,
                     style::Color::Reset,

@@ -90,12 +90,15 @@ impl RenderBuffer {
 
     fn put_at(
         &mut self,
-        i: u16,
+        x: u16,
+        y: u16,
         ch: char,
         fg: style::Color,
         bg: style::Color,
         cell_style: CellStyle,
     ) {
+        let i = y * self.width + x;
+
         if let Some(c) = self.cells.get_mut(i as usize) {
             *c = RenderCell {
                 pos: i,
@@ -139,8 +142,15 @@ impl CellPatch {
     }
 }
 
+struct Rect {
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+}
+
 trait Renderable {
-    fn render_into(&self, buf: &mut RenderBuffer, start: u16);
+    fn render_into(&self, buf: &mut RenderBuffer, rect: &Rect);
 }
 
 #[derive(Debug)]
@@ -207,10 +217,11 @@ impl Prompt {
 }
 
 impl Renderable for Prompt {
-    fn render_into(&self, buf: &mut RenderBuffer, start: u16) {
+    fn render_into(&self, buf: &mut RenderBuffer, rect: &Rect) {
         for (i, &ch) in self.curr.iter().enumerate() {
             buf.put_at(
-                i as u16 + start,
+                i as u16 + rect.x,
+                rect.y,
                 ch,
                 style::Color::White,
                 style::Color::Reset,
@@ -279,14 +290,21 @@ fn main() -> anyhow::Result<()> {
         buf_curr.clear();
 
         chat_client.read()?;
-        chat_client
-            .history
-            .render_into(&mut buf_curr, size.1.checked_sub(3).unwrap_or(0) * size.0);
+        chat_client.history.render_into(
+            &mut buf_curr,
+            &Rect {
+                x: 0,
+                y: 0,
+                width: size.0,
+                height: size.1.checked_sub(2).unwrap_or(0),
+            },
+        );
 
         if let Some(prompt_start_row) = size.1.checked_sub(2) {
             for i in 0..size.0 {
                 buf_curr.put_at(
-                    prompt_start_row * size.0 + i,
+                    i,
+                    prompt_start_row,
                     '━',
                     style::Color::White,
                     style::Color::Reset,
@@ -294,9 +312,15 @@ fn main() -> anyhow::Result<()> {
                 );
             }
 
-            let prompt_start_i = (prompt_start_row + 1) * size.0;
-
-            prompt.render_into(&mut buf_curr, prompt_start_i);
+            prompt.render_into(
+                &mut buf_curr,
+                &Rect {
+                    x: 0,
+                    y: prompt_start_row + 1,
+                    width: size.0,
+                    height: size.1,
+                },
+            );
         }
 
         let diff = buf_prev.diff(&buf_curr);

@@ -24,7 +24,7 @@ enum Message {
     Sent { from: SocketAddr, message: String },
 }
 
-fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<()> {
+fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<()> {
     let addr = stream
         .peer_addr()
         .context("ERROR: Failed to get client socket address")?;
@@ -79,7 +79,7 @@ fn client(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<(
     Ok(())
 }
 
-fn server(messages: Receiver<Message>) -> anyhow::Result<()> {
+fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
     let mut clients = HashMap::<SocketAddr, Client>::new();
 
     loop {
@@ -127,7 +127,7 @@ fn main() -> anyhow::Result<()> {
     println!("INFO: Server listening on {addr}");
 
     let (tx, rx) = channel();
-    thread::spawn(|| server(rx));
+    thread::spawn(|| server_worker(rx));
 
     for stream in listener.incoming() {
         match stream {
@@ -136,7 +136,7 @@ fn main() -> anyhow::Result<()> {
                 let sender = tx.clone();
 
                 thread::spawn(|| {
-                    client(stream, sender).context("ERROR: Error spawning client thread")
+                    client_worker(stream, sender).context("ERROR: Error spawning client thread")
                 });
             }
             Err(e) => eprintln!("ERROR: could not accept connection: {e}"),
