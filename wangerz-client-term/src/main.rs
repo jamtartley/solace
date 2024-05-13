@@ -113,6 +113,29 @@ impl RenderBuffer {
             }
         }
     }
+
+    fn render_to(&self, qc: &mut impl QueueableCommand) -> anyhow::Result<()> {
+        qc.queue(cursor::MoveTo(0, 0))?;
+
+        for RenderCell {
+            ch,
+            fg,
+            bg,
+            cell_style,
+        } in &self.cells
+        {
+            let attr = match cell_style {
+                CellStyle::Bold => style::Attribute::Bold,
+                CellStyle::Italic => style::Attribute::Italic,
+                CellStyle::Normal => style::Attribute::NormalIntensity,
+            };
+            qc.queue(style::PrintStyledContent(
+                ch.with(*fg).on(*bg).attribute(attr),
+            ))?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -127,7 +150,7 @@ impl CellPatch {
         Self { x, y, cell }
     }
 
-    fn render_to(&self, stdout: &mut io::Stdout) -> anyhow::Result<()> {
+    fn render_to(&self, qc: &mut impl QueueableCommand) -> anyhow::Result<()> {
         let RenderCell {
             bg,
             ch,
@@ -140,8 +163,7 @@ impl CellPatch {
             CellStyle::Normal => style::Attribute::NormalIntensity,
         };
 
-        stdout
-            .queue(cursor::MoveTo(self.x, self.y))?
+        qc.queue(cursor::MoveTo(self.x, self.y))?
             .queue(style::PrintStyledContent(
                 ch.with(fg).on(bg).attribute(attr),
             ))?;
@@ -275,6 +297,8 @@ fn main() -> anyhow::Result<()> {
                     size = (width, height);
                     buf_curr.resize(width, height);
                     buf_prev.resize(width, height);
+                    buf_prev.render_to(&mut stdout)?;
+                    stdout.flush()?;
                 }
                 event::Event::Key(key) => {
                     let event::KeyEvent {
@@ -291,19 +315,15 @@ fn main() -> anyhow::Result<()> {
                             let to_send = prompt.curr.iter().collect::<String>();
 
                             if to_send.starts_with("/connect") {
-                                let mut split = to_send.split(' ');
-                                let ip = split.nth(1).unwrap_or("ERROR: No ip found");
-                                let port: usize = split
-                                    .next()
-                                    .unwrap_or("ERROR: No port found")
-                                    .parse::<usize>()?;
-
                                 chat_client = Some(
                                     ChatClientBuilder::new()
-                                        .with_ip(ip)
-                                        .with_port(port)
+                                        .with_ip("0.0.0.0")
+                                        .with_port(7878)
                                         .connect()?,
                                 );
+                                prompt.clear();
+                            } else if to_send.starts_with("/quit") {
+                                quit = true
                             } else if let Some(chat_client) = &mut chat_client {
                                 // @CLEANUP: Maybe render an error message in the log if not?
                                 if chat_client.write(to_send).is_ok() {
