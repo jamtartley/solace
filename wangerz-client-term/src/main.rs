@@ -27,7 +27,6 @@ enum CellStyle {
 
 #[derive(Clone, Debug, PartialEq)]
 struct RenderCell {
-    pos: u16,
     ch: char,
     fg: style::Color,
     bg: style::Color,
@@ -35,9 +34,8 @@ struct RenderCell {
 }
 
 impl RenderCell {
-    fn new(pos: u16) -> Self {
+    fn new() -> Self {
         Self {
-            pos,
             ch: ' ',
             fg: style::Color::White,
             bg: style::Color::Reset,
@@ -57,21 +55,15 @@ impl RenderCell {
 struct RenderBuffer {
     cells: Vec<RenderCell>,
     width: u16,
-    stdout: io::Stdout,
+    height: u16,
 }
 
 impl RenderBuffer {
-    fn new(size: u16, width: u16) -> Self {
-        let mut cells = vec![];
-
-        for i in 0..size {
-            cells.push(RenderCell::new(i));
-        }
-
+    fn new(width: u16, height: u16) -> Self {
         Self {
-            cells,
+            cells: (0..(width * height)).map(|_| RenderCell::new()).collect(),
             width,
-            stdout: io::stdout(),
+            height: 0,
         }
     }
 
@@ -81,9 +73,20 @@ impl RenderBuffer {
         self.cells
             .iter()
             .zip(other.cells.iter())
-            .filter(|(us, them)| us != them)
-            .map(|(_, them)| CellPatch { cell: them.clone() })
+            .enumerate()
+            .filter(|(_, (a, b))| *a != *b)
+            .map(|(i, (_, cell))| {
+                CellPatch::new(cell.clone(), i as u16 % self.width, i as u16 / self.width)
+            })
             .collect()
+    }
+
+    fn resize(&mut self, width: u16, height: u16) {
+        self.cells
+            .resize((width * height) as usize, RenderCell::new());
+        self.cells.fill(RenderCell::new());
+        self.width = width;
+        self.height = height;
     }
 
     fn clear(&mut self) {
@@ -103,7 +106,6 @@ impl RenderBuffer {
 
         if let Some(c) = self.cells.get_mut(i as usize) {
             *c = RenderCell {
-                pos: i,
                 ch,
                 fg,
                 bg,
@@ -115,19 +117,23 @@ impl RenderBuffer {
 
 #[derive(Debug)]
 struct CellPatch {
+    x: u16,
+    y: u16,
     cell: RenderCell,
 }
 
 impl CellPatch {
-    fn render(&self, stdout: &mut io::Stdout, width: u16) -> anyhow::Result<()> {
+    fn new(cell: RenderCell, x: u16, y: u16) -> Self {
+        Self { x, y, cell }
+    }
+
+    fn render_to(&self, stdout: &mut io::Stdout) -> anyhow::Result<()> {
         let RenderCell {
             bg,
             ch,
             fg,
-            pos,
             cell_style,
         } = self.cell;
-        let (row, col) = ((pos / width), (pos % width));
         let attr = match cell_style {
             CellStyle::Bold => style::Attribute::Bold,
             CellStyle::Italic => style::Attribute::Italic,
@@ -135,7 +141,7 @@ impl CellPatch {
         };
 
         stdout
-            .queue(cursor::MoveTo(col, row))?
+            .queue(cursor::MoveTo(self.x, self.y))?
             .queue(style::PrintStyledContent(
                 ch.with(fg).on(bg).attribute(attr),
             ))?;
@@ -252,11 +258,11 @@ impl Drop for Screen {
 }
 
 fn main() -> anyhow::Result<()> {
-    let size = terminal::size()?;
+    let mut size = terminal::size()?;
     let mut chat_client: Option<ChatClient> = None;
     let mut stdout = io::stdout();
-    let mut buf_curr = RenderBuffer::new(size.0 * size.1, size.0);
-    let mut buf_prev = RenderBuffer::new(size.0 * size.1, size.0);
+    let mut buf_curr = RenderBuffer::new(size.0, size.1);
+    let mut buf_prev = RenderBuffer::new(size.0, size.1);
     let mut prompt = Prompt::new();
     let mut quit = false;
     let _screen = Screen::start(&mut stdout)?;
@@ -264,42 +270,51 @@ fn main() -> anyhow::Result<()> {
 
     while !quit {
         if event::poll(FRAME_TIME)? {
-            if let event::Event::Key(event::KeyEvent {
-                code, modifiers, ..
-            }) = event::read()?
-            {
-                match code {
-                    event::KeyCode::Char('c')
-                        if modifiers.contains(event::KeyModifiers::CONTROL) =>
-                    {
-                        quit = true
-                    }
-                    event::KeyCode::Enter => {
-                        let to_send = prompt.curr.iter().collect::<String>();
+            match event::read()? {
+                event::Event::Resize(width, height) => {
+                    size = (width, height);
+                    buf_curr.resize(width, height);
+                    buf_prev.resize(width, height);
+                }
+                event::Event::Key(key) => {
+                    let event::KeyEvent {
+                        code, modifiers, ..
+                    } = key;
 
-                        if to_send.starts_with("/connect") {
-                            let mut split = to_send.split(' ');
-                            let ip = split.nth(1).unwrap_or("ERROR: No ip found");
-                            let port: usize = split
-                                .next()
-                                .unwrap_or("ERROR: No port found")
-                                .parse::<usize>()?;
+                    match code {
+                        event::KeyCode::Char('c')
+                            if modifiers.contains(event::KeyModifiers::CONTROL) =>
+                        {
+                            quit = true
+                        }
+                        event::KeyCode::Enter => {
+                            let to_send = prompt.curr.iter().collect::<String>();
 
-                            chat_client = Some(
-                                ChatClientBuilder::new()
-                                    .with_ip(ip)
-                                    .with_port(port)
-                                    .connect()?,
-                            );
-                        } else if let Some(chat_client) = &mut chat_client {
-                            // @CLEANUP: Maybe render an error message in the log if not?
-                            if chat_client.write(to_send).is_ok() {
-                                prompt.clear();
+                            if to_send.starts_with("/connect") {
+                                let mut split = to_send.split(' ');
+                                let ip = split.nth(1).unwrap_or("ERROR: No ip found");
+                                let port: usize = split
+                                    .next()
+                                    .unwrap_or("ERROR: No port found")
+                                    .parse::<usize>()?;
+
+                                chat_client = Some(
+                                    ChatClientBuilder::new()
+                                        .with_ip(ip)
+                                        .with_port(port)
+                                        .connect()?,
+                                );
+                            } else if let Some(chat_client) = &mut chat_client {
+                                // @CLEANUP: Maybe render an error message in the log if not?
+                                if chat_client.write(to_send).is_ok() {
+                                    prompt.clear();
+                                }
                             }
                         }
+                        _ => prompt.handle_key_press(code),
                     }
-                    _ => prompt.handle_key_press(code),
                 }
+                _ => (),
             }
         }
 
@@ -344,7 +359,7 @@ fn main() -> anyhow::Result<()> {
         let diff = buf_prev.diff(&buf_curr);
 
         for patch in &diff {
-            patch.render(&mut stdout, size.0)?;
+            patch.render_to(&mut stdout)?;
         }
 
         stdout
