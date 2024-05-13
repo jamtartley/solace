@@ -279,7 +279,9 @@ fn main() -> anyhow::Result<()> {
         buf_curr.clear();
 
         chat_client.read()?;
-        chat_client.history.render_into(&mut buf_curr, 0);
+        chat_client
+            .history
+            .render_into(&mut buf_curr, size.1.checked_sub(3).unwrap_or(0) * size.0);
 
         if let Some(prompt_start_row) = size.1.checked_sub(2) {
             for i in 0..size.0 {

@@ -15,10 +15,10 @@ pub(crate) struct ChatHistory {
 
 impl Renderable for ChatHistory {
     fn render_into(&self, buf: &mut crate::RenderBuffer, start: u16) {
-        for (i, entry) in self.entries.iter().enumerate() {
+        for (i, entry) in self.entries.iter().rev().enumerate() {
             for (j, ch) in entry.chars().enumerate() {
                 buf.put_at(
-                    start + i as u16 * buf.width + j as u16,
+                    start - i as u16 * buf.width + j as u16,
                     ch,
                     style::Color::White,
                     style::Color::Reset,
