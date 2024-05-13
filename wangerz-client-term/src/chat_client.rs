@@ -1,5 +1,4 @@
 use std::{
-    fs::OpenOptions,
     io::{ErrorKind, Read, Write},
     net::TcpStream,
     str,
@@ -79,7 +78,7 @@ pub(crate) struct ChatClient {
 impl ChatClient {
     pub(crate) fn write(&mut self, value: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            tcp_stream.write(value.as_bytes())?;
+            tcp_stream.write_all(value.as_bytes())?;
         }
 
         Ok(())
@@ -91,27 +90,15 @@ impl ChatClient {
         if let Some(tcp_stream) = &mut self.stream {
             match tcp_stream.read(&mut buf) {
                 Ok(n) if n > 0 => {
-                    let mut f = OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open("chat.log")?;
-                    writeln!(&mut f, "{}", n)?;
-
                     let bytes = buf[0..n]
                         .iter()
                         .filter(|&x| *x >= 32)
                         .cloned()
                         .collect::<Vec<u8>>();
 
-                    let mut f = OpenOptions::new()
-                        .append(true)
-                        .create(true)
-                        .open("chat.log")?;
-
                     if let Ok(message) = str::from_utf8(&bytes) {
                         if !message.is_empty() {
                             self.history.entries.push(message.to_string());
-                            writeln!(&mut f, "{}", message.to_string())?;
                         }
                     }
                 }

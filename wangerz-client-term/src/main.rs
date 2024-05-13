@@ -2,7 +2,7 @@
 
 use std::{
     io::{self, Write},
-    mem, thread,
+    mem,
     time::Duration,
 };
 
@@ -15,17 +15,12 @@ use crossterm::{
 
 mod chat_client;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum CellStyle {
     Bold,
     Italic,
+    #[default]
     Normal,
-}
-
-impl Default for CellStyle {
-    fn default() -> Self {
-        CellStyle::Normal
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -199,10 +194,9 @@ impl Prompt {
     }
 
     fn handle_normal(&mut self, key_code: event::KeyCode) {
-        match key_code {
-            event::KeyCode::Char('i') => self.mode = Mode::Insert,
-            _ => (),
-        };
+        if let event::KeyCode::Char('i') = key_code {
+            self.mode = Mode::Insert
+        }
     }
 
     fn clear(&mut self) {
@@ -239,8 +233,8 @@ impl Screen {
 
 impl Drop for Screen {
     fn drop(&mut self) {
-        let _ = terminal::disable_raw_mode().unwrap();
-        let _ = crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
+        terminal::disable_raw_mode().unwrap();
+        crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
     }
 }
 
@@ -255,15 +249,15 @@ fn main() -> anyhow::Result<()> {
     let mut buf_prev = RenderBuffer::new(size.0 * size.1, size.0);
     let mut prompt = Prompt::new();
     let _screen = Screen::start(&mut stdout)?;
+    const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
 
     while !chat_client.should_quit {
-        buf_curr.clear();
-
-        while event::poll(Duration::ZERO)? {
-            match event::read()? {
-                event::Event::Key(event::KeyEvent {
-                    code, modifiers, ..
-                }) => match code {
+        if event::poll(FRAME_TIME)? {
+            if let event::Event::Key(event::KeyEvent {
+                code, modifiers, ..
+            }) = event::read()?
+            {
+                match code {
                     event::KeyCode::Char('c')
                         if modifiers.contains(event::KeyModifiers::CONTROL) =>
                     {
@@ -278,48 +272,46 @@ fn main() -> anyhow::Result<()> {
                         }
                     }
                     _ => prompt.handle_key_press(code),
-                },
-                _ => (),
-            }
-
-            chat_client.read()?;
-
-            chat_client.history.render_into(&mut buf_curr, 0);
-
-            if let Some(prompt_start_row) = size.1.checked_sub(2) {
-                for i in 0..size.0 {
-                    buf_curr.put_at(
-                        prompt_start_row * size.0 + i,
-                        '━',
-                        style::Color::White,
-                        style::Color::Reset,
-                        CellStyle::Normal,
-                    );
                 }
-
-                let prompt_start_i = (prompt_start_row + 1) * size.0;
-
-                prompt.render_into(&mut buf_curr, prompt_start_i);
             }
-
-            let diff = buf_prev.diff(&buf_curr);
-
-            for patch in &diff {
-                patch.render(&mut stdout, size.0)?;
-            }
-
-            stdout
-                .queue(cursor::MoveTo(prompt.curr.len() as u16, size.1 - 1))?
-                .queue(match prompt.mode {
-                    Mode::Insert => cursor::SetCursorStyle::SteadyBar,
-                    Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
-                })?
-                .flush()?;
-
-            mem::swap(&mut buf_curr, &mut buf_prev);
-
-            thread::sleep(std::time::Duration::from_millis(16));
         }
+
+        buf_curr.clear();
+
+        chat_client.read()?;
+        chat_client.history.render_into(&mut buf_curr, 0);
+
+        if let Some(prompt_start_row) = size.1.checked_sub(2) {
+            for i in 0..size.0 {
+                buf_curr.put_at(
+                    prompt_start_row * size.0 + i,
+                    '━',
+                    style::Color::White,
+                    style::Color::Reset,
+                    CellStyle::Normal,
+                );
+            }
+
+            let prompt_start_i = (prompt_start_row + 1) * size.0;
+
+            prompt.render_into(&mut buf_curr, prompt_start_i);
+        }
+
+        let diff = buf_prev.diff(&buf_curr);
+
+        for patch in &diff {
+            patch.render(&mut stdout, size.0)?;
+        }
+
+        stdout
+            .queue(cursor::MoveTo(prompt.curr.len() as u16, size.1 - 1))?
+            .queue(match prompt.mode {
+                Mode::Insert => cursor::SetCursorStyle::SteadyBar,
+                Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
+            })?
+            .flush()?;
+
+        mem::swap(&mut buf_curr, &mut buf_prev);
     }
 
     Ok(())
