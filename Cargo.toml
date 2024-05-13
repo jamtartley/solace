@@ -1,0 +1,3 @@
+[workspace]
+members = ["wangerz-server", "wangerz-client-term"]
+resolver = "2"
