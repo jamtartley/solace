@@ -6,16 +6,16 @@ use std::{
     time::Duration,
 };
 
-use chat_client::ChatClientBuilder;
 use crossterm::{
     cursor, event,
     style::{self, Stylize},
     terminal, QueueableCommand,
 };
 
-use crate::chat_client::ChatClient;
+use crate::{chat_client::ChatClient, command::parse_command};
 
 mod chat_client;
+mod command;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum CellStyle {
@@ -281,16 +281,15 @@ impl Drop for Screen {
 
 fn main() -> anyhow::Result<()> {
     let mut size = terminal::size()?;
-    let mut chat_client: Option<ChatClient> = None;
+    let mut chat_client = ChatClient::default();
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0, size.1);
     let mut buf_prev = RenderBuffer::new(size.0, size.1);
     let mut prompt = Prompt::new();
-    let mut quit = false;
     let _screen = Screen::start(&mut stdout)?;
     const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
 
-    while !quit {
+    while !chat_client.should_quit {
         if event::poll(FRAME_TIME)? {
             match event::read()? {
                 event::Event::Resize(width, height) => {
@@ -309,27 +308,25 @@ fn main() -> anyhow::Result<()> {
                         event::KeyCode::Char('c')
                             if modifiers.contains(event::KeyModifiers::CONTROL) =>
                         {
-                            quit = true
+                            chat_client.should_quit = true
                         }
                         event::KeyCode::Enter => {
                             let to_send = prompt.curr.iter().collect::<String>();
 
-                            if to_send.starts_with("/connect") {
-                                chat_client = Some(
-                                    ChatClientBuilder::new()
-                                        .with_ip("0.0.0.0")
-                                        .with_port(7878)
-                                        .connect()?,
-                                );
-                                prompt.clear();
-                            } else if to_send.starts_with("/quit") {
-                                quit = true
-                            } else if let Some(chat_client) = &mut chat_client {
-                                // @CLEANUP: Maybe render an error message in the log if not?
-                                if chat_client.write(to_send).is_ok() {
-                                    prompt.clear();
+                            match parse_command(&to_send) {
+                                Ok(Some((command, args))) => {
+                                    (command.execute)(&mut chat_client, &args)?;
+                                }
+                                Ok(None) => (), // @CLEANUP: Log "command not found" error to the chat window
+                                Err(_) => {
+                                    if chat_client.write(to_send).is_ok() {
+                                        prompt.clear();
+                                    }
                                 }
                             }
+
+                            // @CLEANUP: Maybe render an error message in the log if not?
+                            prompt.clear();
                         }
                         _ => prompt.handle_key_press(code),
                     }
@@ -340,18 +337,16 @@ fn main() -> anyhow::Result<()> {
 
         buf_curr.clear();
 
-        if let Some(chat_client) = &mut chat_client {
-            chat_client.read()?;
-            chat_client.history.render_into(
-                &mut buf_curr,
-                &Rect {
-                    x: 0,
-                    y: 0,
-                    width: size.0,
-                    height: size.1.saturating_sub(2),
-                },
-            );
-        }
+        chat_client.read()?;
+        chat_client.history.render_into(
+            &mut buf_curr,
+            &Rect {
+                x: 0,
+                y: 0,
+                width: size.0,
+                height: size.1.saturating_sub(2),
+            },
+        );
 
         if let Some(prompt_start_row) = size.1.checked_sub(2) {
             for i in 0..size.0 {
