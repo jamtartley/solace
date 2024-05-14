@@ -40,35 +40,63 @@ pub(crate) struct ChatClient {
     pub(crate) history: ChatHistory,
     pub(crate) should_quit: bool,
     pub(crate) stream: Option<TcpStream>,
+    buf_message: Vec<u8>,
 }
 
 impl ChatClient {
-    pub(crate) fn write(&mut self, value: String) -> anyhow::Result<()> {
+    pub(crate) fn new() -> Self {
+        let stream = TcpStream::connect("0.0.0.0:7878")
+            .and_then(|s| {
+                s.set_nonblocking(true)?;
+                Ok(s)
+            })
+            .ok();
+
+        Self {
+            buf_message: Vec::new(),
+            history: ChatHistory::default(),
+            should_quit: false,
+            stream,
+        }
+    }
+
+    pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            tcp_stream.write_all(value.as_bytes())?;
+            let with_newlines = format!("{to_send}\r\n");
+
+            tcp_stream.write_all(with_newlines.as_bytes())?;
         }
 
         Ok(())
     }
 
     pub(crate) fn read(&mut self) -> anyhow::Result<()> {
-        let mut buf = vec![0; 1024];
+        let mut buf_tmp = vec![0; 512];
 
         if let Some(tcp_stream) = &mut self.stream {
-            match tcp_stream.read(&mut buf) {
+            match tcp_stream.read(&mut buf_tmp) {
                 Ok(n) if n > 0 => {
-                    let bytes = buf[0..n]
-                        .iter()
-                        .filter(|&x| *x >= 32)
-                        .cloned()
-                        .collect::<Vec<u8>>();
+                    self.buf_message.extend_from_slice(&buf_tmp[..n]);
 
-                    if let Ok(message) = str::from_utf8(&bytes) {
-                        if !message.is_empty() {
-                            self.history.entries.push(message.to_string());
+                    if let Some(pos) = self
+                        .buf_message
+                        .windows(2)
+                        .position(|window| window == b"\r\n")
+                    {
+                        let raw_message = self.buf_message.drain(..pos).collect::<Vec<u8>>();
+
+                        if let Ok(message) = str::from_utf8(&raw_message) {
+                            if !message.is_empty() {
+                                // @CLEANUP: Immediately push to chat log and color differently
+                                // until confirmed? As opposed to waiting for the server to return
+                                // the same message back.
+                                self.history.entries.push(message.to_string());
+                                self.buf_message.clear();
+                            }
                         }
                     }
                 }
+                Ok(0) => self.stream = None,
                 Err(e) if e.kind() != ErrorKind::WouldBlock => {
                     self.stream = None;
                 }

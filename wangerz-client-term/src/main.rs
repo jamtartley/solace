@@ -281,7 +281,7 @@ impl Drop for Screen {
 
 fn main() -> anyhow::Result<()> {
     let mut size = terminal::size()?;
-    let mut chat_client = ChatClient::default();
+    let mut chat_client = ChatClient::new();
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0, size.1);
     let mut buf_prev = RenderBuffer::new(size.0, size.1);
@@ -319,8 +319,7 @@ fn main() -> anyhow::Result<()> {
                                 }
                                 Ok(None) => (), // @CLEANUP: Log "command not found" error to the chat window
                                 Err(_) => {
-                                    let with_newlines = format!("{to_send}\r\n");
-                                    if chat_client.write(with_newlines).is_ok() {
+                                    if chat_client.write(to_send).is_ok() {
                                         prompt.clear();
                                     }
                                 }

@@ -34,23 +34,23 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
         })
         .context("ERROR: Could not send message from {addr}:")?;
 
-    let mut buf_message = vec![0; 512];
+    let mut buf_message = Vec::new();
 
     loop {
         let mut buf_tmp = vec![0; 512];
 
         match stream.as_ref().read(&mut buf_tmp) {
             Ok(0) => {
-                let _ = messages
+                messages
                     .send(Message::ClientDisconnected { addr })
-                    .context("ERROR: Could not send disconnected message to client {addr}");
+                    .context("ERROR: Could not send disconnected message to client {addr}")?;
                 break;
             }
             Ok(n) => {
                 buf_message.extend_from_slice(&buf_tmp[..n]);
 
-                while let Some(pos) = buf_message.windows(2).position(|window| window == b"\r\n") {
-                    let message = buf_message.drain(..pos + 2).collect::<Vec<u8>>();
+                if let Some(pos) = buf_message.windows(2).position(|window| window == b"\r\n") {
+                    let message = buf_message.drain(..pos).collect::<Vec<u8>>();
 
                     match str::from_utf8(&message) {
                         Ok(message) => {
@@ -64,6 +64,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                                     message: message.to_owned(),
                                 })
                                 .context("ERROR: Could not send message")?;
+                            buf_message.clear();
                         }
                         Err(e) => eprintln!("ERROR: Could not decode message into UTF-8: {e}"),
                     }
@@ -111,7 +112,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     for (_, client) in clients.iter_mut() {
-                        writeln!(client.conn.as_ref(), "{message}").context(
+                        writeln!(client.conn.as_ref(), "{message}\r\n").context(
                             "ERROR: could not broadcast message to all the clients from {from}:",
                         )?;
                     }
