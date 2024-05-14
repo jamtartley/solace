@@ -319,7 +319,8 @@ fn main() -> anyhow::Result<()> {
                                 }
                                 Ok(None) => (), // @CLEANUP: Log "command not found" error to the chat window
                                 Err(_) => {
-                                    if chat_client.write(to_send).is_ok() {
+                                    let with_newlines = format!("{to_send}\r\n");
+                                    if chat_client.write(with_newlines).is_ok() {
                                         prompt.clear();
                                     }
                                 }

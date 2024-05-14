@@ -34,10 +34,12 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
         })
         .context("ERROR: Could not send message from {addr}:")?;
 
-    let mut buf = vec![0; 64];
+    let mut buf_message = vec![0; 512];
 
     loop {
-        match stream.as_ref().read(&mut buf) {
+        let mut buf_tmp = vec![0; 512];
+
+        match stream.as_ref().read(&mut buf_tmp) {
             Ok(0) => {
                 let _ = messages
                     .send(Message::ClientDisconnected { addr })
@@ -45,26 +47,26 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                 break;
             }
             Ok(n) => {
-                let bytes = buf[0..n]
-                    .iter()
-                    .filter(|&x| *x >= 32)
-                    .cloned()
-                    .collect::<Vec<u8>>();
+                buf_message.extend_from_slice(&buf_tmp[..n]);
 
-                match str::from_utf8(&bytes) {
-                    Ok(message) => {
-                        if message.is_empty() {
-                            continue;
+                while let Some(pos) = buf_message.windows(2).position(|window| window == b"\r\n") {
+                    let message = buf_message.drain(..pos + 2).collect::<Vec<u8>>();
+
+                    match str::from_utf8(&message) {
+                        Ok(message) => {
+                            if message.is_empty() {
+                                continue;
+                            }
+
+                            messages
+                                .send(Message::Sent {
+                                    from: addr,
+                                    message: message.to_owned(),
+                                })
+                                .context("ERROR: Could not send message")?;
                         }
-
-                        messages
-                            .send(Message::Sent {
-                                from: addr,
-                                message: message.to_string(),
-                            })
-                            .context("ERROR: Could not send message")?;
+                        Err(e) => eprintln!("ERROR: Could not decode message into UTF-8: {e}"),
                     }
-                    Err(e) => eprintln!("ERROR: Could not decode message into UTF-8: {e}"),
                 }
             }
             Err(_) => {
