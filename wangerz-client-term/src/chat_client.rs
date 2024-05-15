@@ -10,7 +10,7 @@ use crate::Renderable;
 
 #[derive(Debug, Default)]
 pub(crate) struct ChatHistory {
-    pub(crate) entries: Vec<String>,
+    pub(crate) entries: Vec<(String, style::Color)>,
 }
 
 impl Renderable for ChatHistory {
@@ -18,7 +18,7 @@ impl Renderable for ChatHistory {
         let height = rect.height as usize;
 
         for (i, entry) in self.entries.iter().rev().take(height).enumerate() {
-            for (j, ch) in entry.chars().enumerate() {
+            for (j, ch) in entry.0.chars().enumerate() {
                 let x = rect.x + j as u16;
                 let y = rect.y + rect.height - 1 - i as u16;
 
@@ -26,12 +26,22 @@ impl Renderable for ChatHistory {
                     x,
                     y,
                     ch,
-                    style::Color::White,
+                    entry.1,
                     style::Color::Reset,
                     crate::CellStyle::Normal,
                 );
             }
         }
+    }
+}
+
+impl ChatHistory {
+    pub(crate) fn message(&mut self, msg: impl Into<String>) {
+        self.entries.push((msg.into(), style::Color::White));
+    }
+
+    pub(crate) fn error(&mut self, msg: impl Into<String>) {
+        self.entries.push((msg.into(), style::Color::Red));
     }
 }
 
@@ -90,15 +100,19 @@ impl ChatClient {
                                 // @CLEANUP: Immediately push to chat log and color differently
                                 // until confirmed? As opposed to waiting for the server to return
                                 // the same message back.
-                                self.history.entries.push(message.to_string());
+                                self.history.message(message);
                                 self.buf_message.clear();
                             }
                         }
                     }
                 }
-                Ok(0) => self.stream = None,
+                Ok(0) => {
+                    self.stream = None;
+                    self.history.error("Get out of it");
+                }
                 Err(e) if e.kind() != ErrorKind::WouldBlock => {
                     self.stream = None;
+                    self.history.error("Get out of it");
                 }
                 _ => {}
             }

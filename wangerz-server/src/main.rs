@@ -100,6 +100,8 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     },
                 );
 
+                writeln!(author.clone().as_ref(), "Welcome to wangerz!\r\n")
+                    .context("ERROR: Could not send welcome message")?;
                 println!("INFO: Client {addr} connected");
             }
             Message::ClientDisconnected { addr } => {

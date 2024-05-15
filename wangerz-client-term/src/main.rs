@@ -317,7 +317,10 @@ fn main() -> anyhow::Result<()> {
                                 Ok(Some((command, args))) => {
                                     (command.execute)(&mut chat_client, &args)?;
                                 }
-                                Ok(None) => (), // @CLEANUP: Log "command not found" error to the chat window
+                                // @CLEANUP: Improve 'command not found' error
+                                Ok(None) => chat_client
+                                    .history
+                                    .error(format!("ERROR: Command not found.")),
                                 Err(_) => {
                                     if chat_client.write(to_send).is_ok() {
                                         prompt.clear();
