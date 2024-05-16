@@ -37,7 +37,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
     let mut buf_message = Vec::new();
 
     loop {
-        let mut buf_tmp = vec![0; 512];
+        let mut buf_tmp = vec![0; 1504];
 
         match stream.as_ref().read(&mut buf_tmp) {
             Ok(0) => {
@@ -57,6 +57,8 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                             if message.is_empty() {
                                 continue;
                             }
+
+                            let _ = wangerz_message_parser::parse(message);
 
                             messages
                                 .send(Message::Sent {

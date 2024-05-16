@@ -168,10 +168,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wangerz-message-parser"
+version = "0.1.0"
+
+[[package]]
 name = "wangerz-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "wangerz-message-parser",
 ]
 
 [[package]]

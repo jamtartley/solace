@@ -81,7 +81,7 @@ impl ChatClient {
     }
 
     pub(crate) fn read(&mut self) -> anyhow::Result<()> {
-        let mut buf_tmp = vec![0; 512];
+        let mut buf_tmp = vec![0; 1504];
 
         if let Some(tcp_stream) = &mut self.stream {
             match tcp_stream.read(&mut buf_tmp) {

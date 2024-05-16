@@ -1,11 +1,8 @@
 [package]
-name = "wangerz-server"
+name = "wangerz-message-parser"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wangerz-message-parser = { path = "../wangerz-message-parser"}
-
-anyhow = "1.0.83"
