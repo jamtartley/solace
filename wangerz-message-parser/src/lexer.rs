@@ -40,9 +40,9 @@ impl Lexer {
         }
 
         match self.content[self.current_pos] {
-            '/' if self.current_pos == 0 => self.lex_command(),
-            '@' => self.lex_user_mention(),
-            '#' => self.lex_channel_mention(),
+            '/' if self.current_pos == 0 => self.lex_special('/'),
+            '@' => self.lex_special('@'),
+            '#' => self.lex_special('#'),
             _ => self.lex_text(),
         }
     }
@@ -74,7 +74,9 @@ impl Lexer {
         }
     }
 
-    fn lex_command(&mut self) -> Option<Token> {
+    fn lex_special(&mut self, marker: char) -> Option<Token> {
+        assert!(vec!['/', '@', '#'].contains(&marker));
+
         self.advance();
 
         let start = self.current_pos;
@@ -82,17 +84,14 @@ impl Lexer {
             self.advance();
         }
 
-        Some(Token::Command(
-            self.content[start..self.current_pos].iter().collect(),
-        ))
-    }
+        let value = self.content[start..self.current_pos].iter().collect();
 
-    fn lex_user_mention(&mut self) -> Option<Token> {
-        todo!()
-    }
-
-    fn lex_channel_mention(&mut self) -> Option<Token> {
-        todo!()
+        match marker {
+            '/' => Some(Token::Command(value)),
+            '@' => Some(Token::UserMention(value)),
+            '#' => Some(Token::ChannelMention(value)),
+            _ => None,
+        }
     }
 
     fn lex_text(&mut self) -> Option<Token> {
