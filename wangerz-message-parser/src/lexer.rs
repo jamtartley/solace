@@ -1,7 +1,22 @@
 #![allow(dead_code)]
 
 #[derive(Clone, Debug)]
-pub(crate) enum Token {
+pub(crate) struct TextSpan(usize, usize);
+
+#[derive(Clone, Debug)]
+pub(crate) struct Token {
+    kind: TokenKind,
+    span: TextSpan,
+}
+
+impl Token {
+    fn new(kind: TokenKind, span: TextSpan) -> Self {
+        Self { kind, span }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum TokenKind {
     Text(String),
     Command(String),
     Argument(String),
@@ -85,11 +100,12 @@ impl Lexer {
         }
 
         let value = self.content[start..self.current_pos].iter().collect();
+        let span = TextSpan(start, self.current_pos);
 
         match marker {
-            '/' => Some(Token::Command(value)),
-            '@' => Some(Token::UserMention(value)),
-            '#' => Some(Token::ChannelMention(value)),
+            '/' => Some(Token::new(TokenKind::Command(value), span)),
+            '@' => Some(Token::new(TokenKind::UserMention(value), span)),
+            '#' => Some(Token::new(TokenKind::ChannelMention(value), span)),
             _ => None,
         }
     }
@@ -101,8 +117,9 @@ impl Lexer {
             self.advance();
         }
 
-        Some(Token::Text(
-            self.content[start..self.current_pos].iter().collect(),
+        Some(Token::new(
+            TokenKind::Text(self.content[start..self.current_pos].iter().collect()),
+            TextSpan(start, self.current_pos),
         ))
     }
 
