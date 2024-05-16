@@ -1,12 +1,19 @@
 #![allow(dead_code)]
 
 #[derive(Clone, Debug)]
-pub(crate) struct TextSpan(usize, usize);
+pub struct TextSpan(usize, usize);
+
+impl From<(TextSpan, TextSpan)> for TextSpan {
+    fn from(value: (TextSpan, TextSpan)) -> Self {
+        // @REFACTOR: TextSpan is stupid lol
+        Self(value.0 .0, value.1 .1)
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct Token {
-    kind: TokenKind,
-    span: TextSpan,
+    pub(crate) kind: TokenKind,
+    pub(crate) span: TextSpan,
 }
 
 impl Token {
@@ -15,13 +22,13 @@ impl Token {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum TokenKind {
     Text(String),
     Command(String),
-    Argument(String),
     UserMention(String),
     ChannelMention(String),
+    Eof,
 }
 
 pub(crate) struct Lexer {
@@ -43,15 +50,24 @@ impl Lexer {
         }
     }
 
-    pub(crate) fn get_next_token(&mut self) -> Option<Token> {
-        if self.is_at_end() {
-            return None;
+    pub(crate) fn lex(&mut self) -> Vec<Token> {
+        loop {
+            let token = self.get_next_token();
+            self.tokens.push(token.clone());
+
+            if token.kind == TokenKind::Eof {
+                break;
+            }
         }
 
+        self.tokens.clone()
+    }
+
+    fn get_next_token(&mut self) -> Token {
         self.eat_whitespace();
 
         if self.is_at_end() {
-            return None;
+            return Token::new(TokenKind::Eof, TextSpan(self.current_pos, self.current_pos));
         }
 
         match self.content[self.current_pos] {
@@ -89,7 +105,7 @@ impl Lexer {
         }
     }
 
-    fn lex_special(&mut self, marker: char) -> Option<Token> {
+    fn lex_special(&mut self, marker: char) -> Token {
         assert!(vec!['/', '@', '#'].contains(&marker));
 
         self.advance();
@@ -103,24 +119,24 @@ impl Lexer {
         let span = TextSpan(start, self.current_pos);
 
         match marker {
-            '/' => Some(Token::new(TokenKind::Command(value), span)),
-            '@' => Some(Token::new(TokenKind::UserMention(value), span)),
-            '#' => Some(Token::new(TokenKind::ChannelMention(value), span)),
-            _ => None,
+            '/' => Token::new(TokenKind::Command(value), span),
+            '@' => Token::new(TokenKind::UserMention(value), span),
+            '#' => Token::new(TokenKind::ChannelMention(value), span),
+            symbol => panic!("Unexpected symbol: {symbol}"),
         }
     }
 
-    fn lex_text(&mut self) -> Option<Token> {
+    fn lex_text(&mut self) -> Token {
         let start = self.current_pos;
 
         while !(self.is_at_end() || self.is_start_of_special()) {
             self.advance();
         }
 
-        Some(Token::new(
+        Token::new(
             TokenKind::Text(self.content[start..self.current_pos].iter().collect()),
             TextSpan(start, self.current_pos),
-        ))
+        )
     }
 
     fn is_start_of_special(&self) -> bool {

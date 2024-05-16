@@ -59,7 +59,8 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                                 continue;
                             }
 
-                            let _ = wangerz_message_parser::parse(message);
+                            let ast = wangerz_message_parser::parse(message);
+                            println!("{ast:?}");
 
                             messages
                                 .send(Message::Sent {

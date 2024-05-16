@@ -1,13 +1,9 @@
-pub struct Message;
+use parser::{Ast, Parser};
 
 mod lexer;
+mod parser;
 
-pub fn parse(message: &str) -> Message {
-    let mut lexer = lexer::Lexer::new(message);
-
-    while let Some(token) = lexer.get_next_token() {
-        println!("{:?}", token);
-    }
-
-    Message {}
+pub fn parse(message: &str) -> Ast {
+    let mut parser = Parser::new(message);
+    parser.parse()
 }

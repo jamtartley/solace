@@ -314,19 +314,8 @@ fn main() -> anyhow::Result<()> {
                             let to_send = prompt.curr.iter().collect::<String>();
                             chat_client.history.message(&to_send);
 
-                            match parse_command(&to_send) {
-                                Ok(Some((command, args))) => {
-                                    (command.execute)(&mut chat_client, &args)?;
-                                }
-                                // @CLEANUP: Improve 'command not found' error
-                                Ok(None) => chat_client
-                                    .history
-                                    .error(format!("ERROR: Command not found.")),
-                                Err(_) => {
-                                    if chat_client.write(to_send).is_ok() {
-                                        prompt.clear();
-                                    }
-                                }
+                            if chat_client.write(to_send).is_ok() {
+                                prompt.clear();
                             }
 
                             // @CLEANUP: Maybe render an error message in the log if not?
