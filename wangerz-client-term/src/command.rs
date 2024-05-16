@@ -25,19 +25,17 @@ const COMMANDS: &[Command] = &[
         description: "Connect to a chat server",
         usage: "connect <host:port>",
         execute: |client, args| {
-            if client.stream.is_none() {
-                if args.len() == 2 {
-                    let ip = args[0];
-                    let port = args[1].parse::<usize>().unwrap();
-                    let conn = format!("{}:{}", ip, port);
+            if client.stream.is_none() && args.len() == 2 {
+                let ip = args[0];
+                let port = args[1].parse::<usize>().unwrap();
+                let conn = format!("{}:{}", ip, port);
 
-                    client.stream = TcpStream::connect(conn)
-                        .and_then(|stream| {
-                            stream.set_nonblocking(true)?;
-                            Ok(stream)
-                        })
-                        .ok();
-                }
+                client.stream = TcpStream::connect(conn)
+                    .and_then(|stream| {
+                        stream.set_nonblocking(true)?;
+                        Ok(stream)
+                    })
+                    .ok();
             }
 
             Ok(())
@@ -46,7 +44,7 @@ const COMMANDS: &[Command] = &[
 ];
 
 pub(crate) fn parse_command(raw: &str) -> anyhow::Result<Option<(&Command, Vec<&str>)>> {
-    let mut parts = raw.trim().split_whitespace();
+    let mut parts = raw.split_whitespace();
 
     if let Some(command) = parts.next() {
         let name = command

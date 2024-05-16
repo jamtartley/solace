@@ -12,7 +12,7 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 
-use crate::{chat_client::ChatClient, command::parse_command};
+use crate::chat_client::ChatClient;
 
 mod chat_client;
 mod command;

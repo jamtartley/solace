@@ -140,9 +140,6 @@ impl Lexer {
     }
 
     fn is_start_of_special(&self) -> bool {
-        match self.current() {
-            '@' | '#' => true,
-            _ => false,
-        }
+        matches!(self.current(), '@' | '#')
     }
 }
