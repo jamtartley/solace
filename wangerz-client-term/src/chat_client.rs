@@ -97,9 +97,6 @@ impl ChatClient {
 
                         if let Ok(message) = str::from_utf8(&raw_message) {
                             if !message.is_empty() {
-                                // @CLEANUP: Immediately push to chat log and color differently
-                                // until confirmed? As opposed to waiting for the server to return
-                                // the same message back.
                                 self.history.message(message);
                                 self.buf_message.clear();
                             }

@@ -16,6 +16,7 @@ use anyhow::Context;
 
 struct Client {
     conn: Arc<TcpStream>,
+    ip: SocketAddr,
 }
 
 enum Message {
@@ -99,6 +100,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     addr,
                     Client {
                         conn: author.clone(),
+                        ip: addr,
                     },
                 );
 
@@ -116,9 +118,11 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     for (_, client) in clients.iter_mut() {
-                        writeln!(client.conn.as_ref(), "{message}\r\n").context(
+                        if from != client.ip {
+                            writeln!(client.conn.as_ref(), "{message}\r\n").context(
                             "ERROR: could not broadcast message to all the clients from {from}:",
                         )?;
+                        }
                     }
                 }
             }

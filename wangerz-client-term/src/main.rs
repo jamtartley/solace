@@ -312,6 +312,7 @@ fn main() -> anyhow::Result<()> {
                         }
                         event::KeyCode::Enter => {
                             let to_send = prompt.curr.iter().collect::<String>();
+                            chat_client.history.message(&to_send);
 
                             match parse_command(&to_send) {
                                 Ok(Some((command, args))) => {
