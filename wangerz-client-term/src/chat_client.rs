@@ -74,8 +74,6 @@ impl ChatHistory {
     }
 
     pub(crate) fn message(&mut self, msg: &str) {
-        use wangerz_message_parser;
-
         fn parts_for_node(
             node: wangerz_message_parser::AstNode,
         ) -> Vec<(String, ChatHistoryPartStyle)> {
