@@ -115,7 +115,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 println!("INFO: Client {addr} disconnected");
             }
             Message::Sent { from, message } => {
-                if clients.get(&from).is_some() {
+                if clients.contains_key(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     for (_, client) in clients.iter_mut() {

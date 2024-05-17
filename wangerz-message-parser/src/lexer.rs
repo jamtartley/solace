@@ -98,7 +98,8 @@ impl Lexer {
     }
 
     fn lex_special(&mut self, marker: char) -> Token {
-        assert!(vec!['/', '@', '#'].contains(&marker));
+        // @BUG: specials should be preceded by whitespace and terminate at non-alpha
+        assert!(['/', '@', '#'].contains(&marker));
 
         let start = self.current_pos;
 

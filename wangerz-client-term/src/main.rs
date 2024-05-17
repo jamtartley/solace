@@ -318,7 +318,7 @@ fn main() -> anyhow::Result<()> {
                                 prompt.clear();
                             }
 
-                            // @CLEANUP: Maybe render an error message in the log if not?
+                            // @CLEANUP: maybe render an error message in the log if not?
                             prompt.clear();
                         }
                         _ => prompt.handle_key_press(code),
