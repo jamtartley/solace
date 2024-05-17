@@ -10,7 +10,7 @@ use crate::Renderable;
 
 #[derive(Debug, Default)]
 pub(crate) struct ChatHistory {
-    pub(crate) entries: Vec<(String, style::Color)>,
+    pub(crate) entries: Vec<Vec<(String, style::Color)>>,
 }
 
 impl Renderable for ChatHistory {
@@ -18,30 +18,70 @@ impl Renderable for ChatHistory {
         let height = rect.height as usize;
 
         for (i, entry) in self.entries.iter().rev().take(height).enumerate() {
-            for (j, ch) in entry.0.chars().enumerate() {
-                let x = rect.x + j as u16;
-                let y = rect.y + rect.height - 1 - i as u16;
+            let mut x = rect.x;
 
-                buf.put_at(
-                    x,
-                    y,
-                    ch,
-                    entry.1,
-                    style::Color::Reset,
-                    crate::CellStyle::Normal,
-                );
+            for part in entry.iter() {
+                for ch in part.0.chars() {
+                    let y = rect.y + rect.height - 1 - i as u16;
+
+                    buf.put_at(
+                        x,
+                        y,
+                        ch,
+                        part.1,
+                        style::Color::Reset,
+                        crate::CellStyle::Normal,
+                    );
+
+                    x += 1;
+                }
             }
         }
     }
 }
 
 impl ChatHistory {
-    pub(crate) fn message(&mut self, msg: impl Into<String>) {
-        self.entries.push((msg.into(), style::Color::White));
+    pub(crate) fn info(&mut self, msg: impl Into<String>) {
+        self.entries.push(vec![(msg.into(), style::Color::White)]);
     }
 
     pub(crate) fn error(&mut self, msg: impl Into<String>) {
-        self.entries.push((msg.into(), style::Color::Red));
+        self.entries.push(vec![(msg.into(), style::Color::Red)]);
+    }
+
+    pub(crate) fn message(&mut self, msg: &str) {
+        use wangerz_message_parser;
+
+        fn parts_for_node(node: wangerz_message_parser::AstNode) -> Vec<(String, style::Color)> {
+            match node {
+                wangerz_message_parser::AstNode::Text { value, .. } => {
+                    vec![(value, style::Color::White)]
+                }
+                wangerz_message_parser::AstNode::ChannelMention { channel_name, .. } => {
+                    vec![(channel_name, style::Color::Blue)]
+                }
+                wangerz_message_parser::AstNode::UserMention { user_name, .. } => {
+                    vec![(user_name, style::Color::Cyan)]
+                }
+                wangerz_message_parser::AstNode::Command { name, args, .. } => {
+                    let args_parts: Vec<(String, style::Color)> =
+                        args.into_iter().flat_map(parts_for_node).collect();
+
+                    let mut parts = vec![(name, style::Color::Grey)];
+                    parts.extend(args_parts);
+                    parts
+                }
+            }
+        }
+
+        let parsed = wangerz_message_parser::parse(msg);
+        let entry = parsed
+            .nodes
+            .into_iter()
+            .flat_map(parts_for_node)
+            .collect::<Vec<(String, style::Color)>>();
+
+        self.entries.push(entry);
     }
 }
 

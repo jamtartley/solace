@@ -64,8 +64,6 @@ impl Lexer {
     }
 
     fn get_next_token(&mut self) -> Token {
-        self.eat_whitespace();
-
         if self.is_at_end() {
             return Token::new(TokenKind::Eof, TextSpan(self.current_pos, self.current_pos));
         }
@@ -95,12 +93,6 @@ impl Lexer {
 
     fn advance(&mut self) {
         if !self.is_at_end() {
-            self.current_pos += 1;
-        }
-    }
-
-    fn eat_whitespace(&mut self) {
-        while self.current_pos < self.end_pos && self.current().is_whitespace() {
             self.current_pos += 1;
         }
     }

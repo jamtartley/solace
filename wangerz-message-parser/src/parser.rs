@@ -4,7 +4,7 @@ use crate::lexer::{Lexer, TextSpan, Token, TokenKind};
 
 #[derive(Clone, Debug, Default)]
 pub struct Ast {
-    nodes: Vec<AstNode>,
+    pub nodes: Vec<AstNode>,
 }
 
 #[derive(Clone, Debug)]

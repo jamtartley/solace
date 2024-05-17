@@ -1,4 +1,4 @@
-use parser::{Ast, Parser};
+pub use parser::{Ast, AstNode, Parser};
 
 mod lexer;
 mod parser;
