@@ -57,13 +57,23 @@ impl ChatHistory {
                 wangerz_message_parser::AstNode::Text { value, .. } => {
                     vec![(value, style::Color::White)]
                 }
-                wangerz_message_parser::AstNode::ChannelMention { channel_name, .. } => {
+                wangerz_message_parser::AstNode::ChannelMention {
+                    raw_channel_name: channel_name,
+                    ..
+                } => {
                     vec![(channel_name, style::Color::Blue)]
                 }
-                wangerz_message_parser::AstNode::UserMention { user_name, .. } => {
+                wangerz_message_parser::AstNode::UserMention {
+                    raw_user_name: user_name,
+                    ..
+                } => {
                     vec![(user_name, style::Color::Cyan)]
                 }
-                wangerz_message_parser::AstNode::Command { name, args, .. } => {
+                wangerz_message_parser::AstNode::Command {
+                    raw_name: name,
+                    args,
+                    ..
+                } => {
                     let args_parts: Vec<(String, style::Color)> =
                         args.into_iter().flat_map(parts_for_node).collect();
 

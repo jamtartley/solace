@@ -100,9 +100,10 @@ impl Lexer {
     fn lex_special(&mut self, marker: char) -> Token {
         assert!(vec!['/', '@', '#'].contains(&marker));
 
+        let start = self.current_pos;
+
         self.advance();
 
-        let start = self.current_pos;
         while !(self.is_at_end() || self.current().is_whitespace()) {
             self.advance();
         }

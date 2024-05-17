@@ -11,16 +11,19 @@ pub struct Ast {
 pub enum AstNode {
     Command {
         span: TextSpan,
-        name: String,
+        raw_name: String,
+        parsed_name: String,
         args: Vec<AstNode>,
     },
     UserMention {
         span: TextSpan,
-        user_name: String,
+        raw_user_name: String,
+        parsed_user_name: String,
     },
     ChannelMention {
         span: TextSpan,
-        channel_name: String,
+        raw_channel_name: String,
+        parsed_channel_name: String,
     },
     Text {
         span: TextSpan,
@@ -111,7 +114,9 @@ impl Parse for AstNode {
                 (
                     Some(AstNode::Command {
                         span,
-                        name,
+                        // @CLEANUP: parsed/raw name cloning
+                        raw_name: name.clone(),
+                        parsed_name: name.clone()[1..].to_string(),
                         args: args.clone(),
                     }),
                     0,
@@ -120,14 +125,16 @@ impl Parse for AstNode {
             TokenKind::UserMention(value) => (
                 Some(AstNode::UserMention {
                     span,
-                    user_name: value,
+                    raw_user_name: value.clone(),
+                    parsed_user_name: value.clone()[1..].to_owned(),
                 }),
                 1,
             ),
             TokenKind::ChannelMention(value) => (
                 Some(AstNode::ChannelMention {
                     span,
-                    channel_name: value,
+                    raw_channel_name: value.clone(),
+                    parsed_channel_name: value.clone()[1..].to_owned(),
                 }),
                 1,
             ),
