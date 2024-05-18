@@ -7,7 +7,7 @@ pub struct TextSpan {
 }
 
 impl TextSpan {
-    fn new(c0: usize, c1: usize) -> Self {
+    pub(crate) fn new(c0: usize, c1: usize) -> Self {
         Self { c0, c1 }
     }
 }
@@ -98,9 +98,10 @@ impl Lexer {
     }
 
     fn peek(&self) -> Option<char> {
-        match self.is_at_end() {
-            false => Some(self.content[self.current_pos + 1]),
-            true => None,
+        if self.is_at_end() {
+            None
+        } else {
+            Some(self.content[self.current_pos + 1])
         }
     }
 
