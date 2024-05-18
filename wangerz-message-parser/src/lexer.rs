@@ -69,11 +69,11 @@ impl Lexer {
         }
 
         match self.current() {
-            '/' if self.current_pos == 0 => self.lex_special('/'),
+            '/' if self.current_pos == 0 => self.lex_special('/', |ch| ch.is_whitespace()),
             '@' | '#'
                 if self.current_pos == 0 || self.content[self.current_pos - 1].is_whitespace() =>
             {
-                self.lex_special(self.current())
+                self.lex_special(self.current(), |ch| !ch.is_alphanumeric())
             }
             _ => self.lex_text(),
         }
@@ -100,15 +100,17 @@ impl Lexer {
         }
     }
 
-    fn lex_special(&mut self, marker: char) -> Token {
-        // @BUG: specials should be preceded by whitespace and terminate at non-alpha
+    fn lex_special<F>(&mut self, marker: char, terminate_when: F) -> Token
+    where
+        F: Fn(char) -> bool,
+    {
         assert!(['/', '@', '#'].contains(&marker));
 
         let start = self.current_pos;
 
         self.advance();
 
-        while !self.is_at_end() && self.current().is_alphanumeric() {
+        while !self.is_at_end() && !terminate_when(self.current()) {
             self.advance();
         }
 
@@ -286,13 +288,13 @@ mod tests {
 
     #[test]
     fn test_command_not_at_start() {
-        let mut lexer = Lexer::new("This is not /command");
+        let mut lexer = Lexer::new("This is not a /command");
         let tokens = lexer.lex();
         assert_eq!(
             tokens,
             vec![
                 Token::new(
-                    TokenKind::Text("This is not /command".to_owned()),
+                    TokenKind::Text("This is not a /command".to_owned()),
                     TextSpan(0, 20)
                 ),
                 Token::new(TokenKind::Eof, TextSpan(20, 20))
@@ -307,15 +309,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Command("/command".to_owned()), TextSpan(0, 8)),
-                Token::new(TokenKind::Text("! follow up".to_owned()), TextSpan(8, 19)),
+                Token::new(TokenKind::Command("/command!".to_owned()), TextSpan(0, 9)),
+                Token::new(TokenKind::Text(" follow up".to_owned()), TextSpan(9, 19)),
                 Token::new(TokenKind::Eof, TextSpan(19, 19))
             ]
         );
     }
 
     #[test]
-    fn test_multiple_commands() {
+    fn test_only_first_command_counts() {
         let mut lexer = Lexer::new("/start then /middle and /end");
         let tokens = lexer.lex();
         assert_eq!(
