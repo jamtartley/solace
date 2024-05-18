@@ -191,16 +191,20 @@ enum Mode {
 #[derive(Debug)]
 struct Prompt {
     curr: Vec<char>,
-    pos: usize,
+    history: Vec<String>,
+    history_offset: usize,
     mode: Mode,
+    pos: usize,
 }
 
 impl Prompt {
     fn new() -> Self {
         Self {
             curr: vec![],
-            pos: 0,
+            history: vec![],
+            history_offset: 0,
             mode: Mode::Insert,
+            pos: 0,
         }
     }
 
@@ -228,20 +232,55 @@ impl Prompt {
             event::KeyCode::Char(ch) => self.insert(ch),
             event::KeyCode::Esc => self.mode = Mode::Normal,
             event::KeyCode::Backspace => self.remove(),
+            event::KeyCode::Up => self.fetch_previous(),
+            event::KeyCode::Down => self.fetch_next(),
             _ => (),
         }
     }
 
     fn handle_normal(&mut self, key_code: event::KeyCode) {
-        if let event::KeyCode::Char('i') = key_code {
-            self.mode = Mode::Insert
+        match key_code {
+            event::KeyCode::Char('i') => self.mode = Mode::Insert,
+            event::KeyCode::Up => self.fetch_previous(),
+            event::KeyCode::Down => self.fetch_next(),
+            _ => (),
         }
     }
 
-    fn clear(&mut self) {
+    fn flush(&mut self) {
+        self.history.push(self.curr.iter().collect::<String>());
+        self.history_offset = 0;
+
         self.curr.clear();
         self.pos = 0;
         self.mode = Mode::Insert;
+    }
+
+    fn fetch_previous(&mut self) {
+        // @CLEANUP: fetch_previous()/fetch_next()
+        if self.history_offset + 1 > self.history.len() {
+            return;
+        }
+
+        self.history_offset += 1;
+
+        if let Some(entry) = self.history.get(self.history.len() - self.history_offset) {
+            self.curr = entry.chars().collect();
+            self.pos = self.curr.len();
+        }
+    }
+
+    fn fetch_next(&mut self) {
+        if self.history_offset == 0 {
+            return;
+        }
+
+        self.history_offset -= 1;
+
+        if let Some(entry) = self.history.get(self.history.len() - self.history_offset) {
+            self.curr = entry.chars().collect();
+            self.pos = self.curr.len();
+        }
     }
 }
 
@@ -312,12 +351,10 @@ fn main() -> anyhow::Result<()> {
                         event::KeyCode::Enter => {
                             let to_send = prompt.curr.iter().collect::<String>();
 
-                            if chat_client.write(to_send).is_ok() {
-                                prompt.clear();
-                            }
+                            chat_client.write(to_send)?;
 
                             // @CLEANUP: maybe render an error message in the log if not?
-                            prompt.clear();
+                            prompt.flush();
                         }
                         _ => prompt.handle_key_press(code),
                     }
