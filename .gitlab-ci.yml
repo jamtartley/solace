@@ -10,7 +10,6 @@ stages:
     key: ${CI_COMMIT_REF_SLUG}
     paths:
       - target/
-      - ~/.cargo
 
 format:
   <<: *checks

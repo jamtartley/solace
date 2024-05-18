@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+mod command;
+
 use std::{
     collections::HashMap,
     io::{Read, Write},
@@ -10,19 +12,20 @@ use std::{
         Arc,
     },
     thread,
-    time::SystemTime,
 };
 
 use anyhow::Context;
+use command::parse_command;
 
 struct Client {
     conn: Arc<TcpStream>,
     ip: SocketAddr,
 }
 
-enum Message {
+pub(crate) enum Message {
     ClientConnected { author: Arc<TcpStream> },
     ClientDisconnected { addr: SocketAddr },
+    // @FEATURE: Extend to target specific clients
     Sent { from: SocketAddr, message: String },
 }
 
@@ -61,14 +64,35 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                             }
 
                             let ast = wangerz_message_parser::parse(message);
-                            println!("{ast:?}");
 
-                            messages
-                                .send(Message::Sent {
-                                    from: addr,
-                                    message: message.to_owned(),
-                                })
-                                .context("ERROR: Could not send message")?;
+                            // @FEATURE: Handle pinging mentioned users
+                            match ast.nodes.first() {
+                                Some(wangerz_message_parser::AstNode::Command {
+                                    raw_name, ..
+                                }) => {
+                                    if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
+                                        (command.execute)(&stream, &messages)?
+                                    } else {
+                                        writeln!(
+                                            stream.as_ref(),
+                                            "ERROR: Command '{raw_name}' not found or invalid\r\n"
+                                        ).context("ERROR: Failed to write 'invalid command' message to client: {addr}")?;
+                                        eprintln!("ERROR: Command not found or invalid");
+                                    }
+                                }
+                                Some(_) => {
+                                    messages
+                                        .send(Message::Sent {
+                                            from: addr,
+                                            message: message.to_owned(),
+                                        })
+                                        .context("ERROR: Could not send message")?;
+                                }
+                                None => {
+                                    eprintln!("ERROR: Received empty message or parsing failed");
+                                }
+                            }
+
                             buf_message.clear();
                         }
                         Err(e) => eprintln!("ERROR: Could not decode message into UTF-8: {e}"),

@@ -15,7 +15,6 @@ use crossterm::{
 use crate::chat_client::ChatClient;
 
 mod chat_client;
-mod command;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum CellStyle {
