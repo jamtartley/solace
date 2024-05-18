@@ -68,10 +68,13 @@ impl Lexer {
             return Token::new(TokenKind::Eof, TextSpan(self.current_pos, self.current_pos));
         }
 
-        match self.content[self.current_pos] {
+        match self.current() {
             '/' if self.current_pos == 0 => self.lex_special('/'),
-            '@' => self.lex_special('@'),
-            '#' => self.lex_special('#'),
+            '@' | '#'
+                if self.current_pos == 0 || self.content[self.current_pos - 1].is_whitespace() =>
+            {
+                self.lex_special(self.current())
+            }
             _ => self.lex_text(),
         }
     }
@@ -105,7 +108,7 @@ impl Lexer {
 
         self.advance();
 
-        while !(self.is_at_end() || self.current().is_whitespace()) {
+        while !self.is_at_end() && self.current().is_alphanumeric() {
             self.advance();
         }
 
@@ -135,5 +138,6 @@ impl Lexer {
 
     fn is_start_of_special(&self) -> bool {
         matches!(self.current(), '@' | '#')
+            && (self.current_pos == 0 || self.content[self.current_pos - 1].is_whitespace())
     }
 }
