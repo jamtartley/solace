@@ -1,12 +1,23 @@
 #![allow(dead_code)]
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct TextSpan(usize, usize);
+pub struct TextSpan {
+    c0: usize,
+    c1: usize,
+}
+
+impl TextSpan {
+    fn new(c0: usize, c1: usize) -> Self {
+        Self { c0, c1 }
+    }
+}
 
 impl From<(TextSpan, TextSpan)> for TextSpan {
     fn from(value: (TextSpan, TextSpan)) -> Self {
-        // @REFACTOR: TextSpan is stupid lol
-        Self(value.0 .0, value.1 .1)
+        Self {
+            c0: value.0.c0,
+            c1: value.1.c1,
+        }
     }
 }
 
@@ -65,7 +76,10 @@ impl Lexer {
 
     fn get_next_token(&mut self) -> Token {
         if self.is_at_end() {
-            return Token::new(TokenKind::Eof, TextSpan(self.current_pos, self.current_pos));
+            return Token::new(
+                TokenKind::Eof,
+                TextSpan::new(self.current_pos, self.current_pos),
+            );
         }
 
         match self.current() {
@@ -115,7 +129,7 @@ impl Lexer {
         }
 
         let value = self.content[start..self.current_pos].iter().collect();
-        let span = TextSpan(start, self.current_pos);
+        let span = TextSpan::new(start, self.current_pos);
 
         match marker {
             '/' => Token::new(TokenKind::Command(value), span),
@@ -134,7 +148,7 @@ impl Lexer {
 
         Token::new(
             TokenKind::Text(self.content[start..self.current_pos].iter().collect()),
-            TextSpan(start, self.current_pos),
+            TextSpan::new(start, self.current_pos),
         )
     }
 
@@ -157,10 +171,13 @@ mod tests {
             vec![
                 Token::new(
                     TokenKind::UserMention("@username".to_owned()),
-                    TextSpan(0, 9)
+                    TextSpan::new(0, 9)
                 ),
-                Token::new(TokenKind::Text(" some text".to_owned()), TextSpan(9, 19)),
-                Token::new(TokenKind::Eof, TextSpan(19, 19))
+                Token::new(
+                    TokenKind::Text(" some text".to_owned()),
+                    TextSpan::new(9, 19)
+                ),
+                Token::new(TokenKind::Eof, TextSpan::new(19, 19))
             ]
         );
     }
@@ -172,16 +189,16 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Text("hello ".to_owned()), TextSpan(0, 6)),
+                Token::new(TokenKind::Text("hello ".to_owned()), TextSpan::new(0, 6)),
                 Token::new(
                     TokenKind::UserMention("@username".to_owned()),
-                    TextSpan(6, 15)
+                    TextSpan::new(6, 15)
                 ),
                 Token::new(
                     TokenKind::Text(", how are you?".to_owned()),
-                    TextSpan(15, 29)
+                    TextSpan::new(15, 29)
                 ),
-                Token::new(TokenKind::Eof, TextSpan(29, 29))
+                Token::new(TokenKind::Eof, TextSpan::new(29, 29))
             ]
         );
     }
@@ -195,9 +212,9 @@ mod tests {
             vec![
                 Token::new(
                     TokenKind::Text("email@example.com".to_owned()),
-                    TextSpan(0, 17)
+                    TextSpan::new(0, 17)
                 ),
-                Token::new(TokenKind::Eof, TextSpan(17, 17))
+                Token::new(TokenKind::Eof, TextSpan::new(17, 17))
             ]
         );
     }
@@ -211,10 +228,13 @@ mod tests {
             vec![
                 Token::new(
                     TokenKind::ChannelMention("#channel".to_owned()),
-                    TextSpan(0, 8)
+                    TextSpan::new(0, 8)
                 ),
-                Token::new(TokenKind::Text(" some text".to_owned()), TextSpan(8, 18)),
-                Token::new(TokenKind::Eof, TextSpan(18, 18))
+                Token::new(
+                    TokenKind::Text(" some text".to_owned()),
+                    TextSpan::new(8, 18)
+                ),
+                Token::new(TokenKind::Eof, TextSpan::new(18, 18))
             ]
         );
     }
@@ -226,13 +246,16 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Text("to ".to_owned()), TextSpan(0, 3)),
+                Token::new(TokenKind::Text("to ".to_owned()), TextSpan::new(0, 3)),
                 Token::new(
                     TokenKind::ChannelMention("#channel".to_owned()),
-                    TextSpan(3, 11)
+                    TextSpan::new(3, 11)
                 ),
-                Token::new(TokenKind::Text(": welcome!".to_owned()), TextSpan(11, 21)),
-                Token::new(TokenKind::Eof, TextSpan(21, 21))
+                Token::new(
+                    TokenKind::Text(": welcome!".to_owned()),
+                    TextSpan::new(11, 21)
+                ),
+                Token::new(TokenKind::Eof, TextSpan::new(21, 21))
             ]
         );
     }
@@ -246,9 +269,9 @@ mod tests {
             vec![
                 Token::new(
                     TokenKind::Text("topic#channelName".to_owned()),
-                    TextSpan(0, 17)
+                    TextSpan::new(0, 17)
                 ),
-                Token::new(TokenKind::Eof, TextSpan(17, 17))
+                Token::new(TokenKind::Eof, TextSpan::new(17, 17))
             ]
         );
     }
@@ -260,14 +283,17 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::UserMention("@user".to_owned()), TextSpan(0, 5)),
-                Token::new(TokenKind::Text("! and ".to_owned()), TextSpan(5, 11)),
+                Token::new(
+                    TokenKind::UserMention("@user".to_owned()),
+                    TextSpan::new(0, 5)
+                ),
+                Token::new(TokenKind::Text("! and ".to_owned()), TextSpan::new(5, 11)),
                 Token::new(
                     TokenKind::ChannelMention("#channel".to_owned()),
-                    TextSpan(11, 19)
+                    TextSpan::new(11, 19)
                 ),
-                Token::new(TokenKind::Text(".".to_owned()), TextSpan(19, 20)),
-                Token::new(TokenKind::Eof, TextSpan(20, 20))
+                Token::new(TokenKind::Text(".".to_owned()), TextSpan::new(19, 20)),
+                Token::new(TokenKind::Eof, TextSpan::new(20, 20))
             ]
         );
     }
@@ -279,9 +305,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Command("/command".to_owned()), TextSpan(0, 8)),
-                Token::new(TokenKind::Text(" some text".to_owned()), TextSpan(8, 18)),
-                Token::new(TokenKind::Eof, TextSpan(18, 18))
+                Token::new(
+                    TokenKind::Command("/command".to_owned()),
+                    TextSpan::new(0, 8)
+                ),
+                Token::new(
+                    TokenKind::Text(" some text".to_owned()),
+                    TextSpan::new(8, 18)
+                ),
+                Token::new(TokenKind::Eof, TextSpan::new(18, 18))
             ]
         );
     }
@@ -295,9 +327,9 @@ mod tests {
             vec![
                 Token::new(
                     TokenKind::Text("This is not a /command".to_owned()),
-                    TextSpan(0, 20)
+                    TextSpan::new(0, 22)
                 ),
-                Token::new(TokenKind::Eof, TextSpan(20, 20))
+                Token::new(TokenKind::Eof, TextSpan::new(22, 22))
             ]
         );
     }
@@ -309,9 +341,15 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Command("/command!".to_owned()), TextSpan(0, 9)),
-                Token::new(TokenKind::Text(" follow up".to_owned()), TextSpan(9, 19)),
-                Token::new(TokenKind::Eof, TextSpan(19, 19))
+                Token::new(
+                    TokenKind::Command("/command!".to_owned()),
+                    TextSpan::new(0, 9)
+                ),
+                Token::new(
+                    TokenKind::Text(" follow up".to_owned()),
+                    TextSpan::new(9, 19)
+                ),
+                Token::new(TokenKind::Eof, TextSpan::new(19, 19))
             ]
         );
     }
@@ -323,12 +361,12 @@ mod tests {
         assert_eq!(
             tokens,
             vec![
-                Token::new(TokenKind::Command("/start".to_owned()), TextSpan(0, 6)),
+                Token::new(TokenKind::Command("/start".to_owned()), TextSpan::new(0, 6)),
                 Token::new(
                     TokenKind::Text(" then /middle and /end".to_owned()),
-                    TextSpan(6, 28)
+                    TextSpan::new(6, 28)
                 ),
-                Token::new(TokenKind::Eof, TextSpan(28, 28))
+                Token::new(TokenKind::Eof, TextSpan::new(28, 28))
             ]
         );
     }

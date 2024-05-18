@@ -2,7 +2,7 @@ stages:
   - checks
 
 .checks: &checks
-  image: rust:1.77.2-alpine3.19
+  image: rust:1.78.0-alpine3.19
   stage: checks
   before_script:
     - apk add --no-cache build-base
@@ -18,7 +18,7 @@ format:
     - rustup component add rustfmt
     - cargo fmt --check --all --verbose
 
-tests:
+test:
   <<: *checks
   script: cargo test --verbose
 
