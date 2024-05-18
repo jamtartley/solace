@@ -9,3 +9,4 @@ edition = "2021"
 wangerz-message-parser = { path = "../wangerz-message-parser"}
 
 anyhow = "1.0.83"
+chrono = "0.4.38"

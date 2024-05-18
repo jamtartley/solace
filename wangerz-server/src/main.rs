@@ -10,6 +10,7 @@ use std::{
         Arc,
     },
     thread,
+    time::SystemTime,
 };
 
 use anyhow::Context;
@@ -118,12 +119,12 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 if clients.contains_key(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
+                    let timestamp = chrono::Utc::now().format("%H:%M:%S");
+
                     for (_, client) in clients.iter_mut() {
-                        if from != client.ip {
-                            writeln!(client.conn.as_ref(), "{message}\r\n").context(
+                        writeln!(client.conn.as_ref(), "{timestamp} -> {message}\r\n").context(
                             "ERROR: could not broadcast message to all the clients from {from}:",
                         )?;
-                        }
                     }
                 }
             }

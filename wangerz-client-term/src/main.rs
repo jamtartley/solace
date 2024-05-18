@@ -312,7 +312,6 @@ fn main() -> anyhow::Result<()> {
                         }
                         event::KeyCode::Enter => {
                             let to_send = prompt.curr.iter().collect::<String>();
-                            chat_client.history.message(&to_send);
 
                             if chat_client.write(to_send).is_ok() {
                                 prompt.clear();
