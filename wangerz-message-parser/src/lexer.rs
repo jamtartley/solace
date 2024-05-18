@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TextSpan(usize, usize);
 
 impl From<(TextSpan, TextSpan)> for TextSpan {
@@ -10,7 +10,7 @@ impl From<(TextSpan, TextSpan)> for TextSpan {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Token {
     pub(crate) kind: TokenKind,
     pub(crate) span: TextSpan,
@@ -139,5 +139,195 @@ impl Lexer {
     fn is_start_of_special(&self) -> bool {
         matches!(self.current(), '@' | '#')
             && (self.current_pos == 0 || self.content[self.current_pos - 1].is_whitespace())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_user_mention_at_start() {
+        let mut lexer = Lexer::new("@username some text");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(
+                    TokenKind::UserMention("@username".to_owned()),
+                    TextSpan(0, 9)
+                ),
+                Token::new(TokenKind::Text(" some text".to_owned()), TextSpan(9, 19)),
+                Token::new(TokenKind::Eof, TextSpan(19, 19))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_user_mention_after_whitespace() {
+        let mut lexer = Lexer::new("hello @username, how are you?");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(TokenKind::Text("hello ".to_owned()), TextSpan(0, 6)),
+                Token::new(
+                    TokenKind::UserMention("@username".to_owned()),
+                    TextSpan(6, 15)
+                ),
+                Token::new(
+                    TokenKind::Text(", how are you?".to_owned()),
+                    TextSpan(15, 29)
+                ),
+                Token::new(TokenKind::Eof, TextSpan(29, 29))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_user_mention_not_preceded_by_whitespace() {
+        let mut lexer = Lexer::new("email@example.com");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(
+                    TokenKind::Text("email@example.com".to_owned()),
+                    TextSpan(0, 17)
+                ),
+                Token::new(TokenKind::Eof, TextSpan(17, 17))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_channel_mention_at_start() {
+        let mut lexer = Lexer::new("#channel some text");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(
+                    TokenKind::ChannelMention("#channel".to_owned()),
+                    TextSpan(0, 8)
+                ),
+                Token::new(TokenKind::Text(" some text".to_owned()), TextSpan(8, 18)),
+                Token::new(TokenKind::Eof, TextSpan(18, 18))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_channel_mention_after_whitespace() {
+        let mut lexer = Lexer::new("to #channel: welcome!");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(TokenKind::Text("to ".to_owned()), TextSpan(0, 3)),
+                Token::new(
+                    TokenKind::ChannelMention("#channel".to_owned()),
+                    TextSpan(3, 11)
+                ),
+                Token::new(TokenKind::Text(": welcome!".to_owned()), TextSpan(11, 21)),
+                Token::new(TokenKind::Eof, TextSpan(21, 21))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_channel_mention_not_preceded_by_whitespace() {
+        let mut lexer = Lexer::new("topic#channelName");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(
+                    TokenKind::Text("topic#channelName".to_owned()),
+                    TextSpan(0, 17)
+                ),
+                Token::new(TokenKind::Eof, TextSpan(17, 17))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_non_alphanumeric_termination() {
+        let mut lexer = Lexer::new("@user! and #channel.");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(TokenKind::UserMention("@user".to_owned()), TextSpan(0, 5)),
+                Token::new(TokenKind::Text("! and ".to_owned()), TextSpan(5, 11)),
+                Token::new(
+                    TokenKind::ChannelMention("#channel".to_owned()),
+                    TextSpan(11, 19)
+                ),
+                Token::new(TokenKind::Text(".".to_owned()), TextSpan(19, 20)),
+                Token::new(TokenKind::Eof, TextSpan(20, 20))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_command_at_start() {
+        let mut lexer = Lexer::new("/command some text");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(TokenKind::Command("/command".to_owned()), TextSpan(0, 8)),
+                Token::new(TokenKind::Text(" some text".to_owned()), TextSpan(8, 18)),
+                Token::new(TokenKind::Eof, TextSpan(18, 18))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_command_not_at_start() {
+        let mut lexer = Lexer::new("This is not /command");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(
+                    TokenKind::Text("This is not /command".to_owned()),
+                    TextSpan(0, 20)
+                ),
+                Token::new(TokenKind::Eof, TextSpan(20, 20))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_command_with_trailing_non_alphanumeric() {
+        let mut lexer = Lexer::new("/command! follow up");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(TokenKind::Command("/command".to_owned()), TextSpan(0, 8)),
+                Token::new(TokenKind::Text("! follow up".to_owned()), TextSpan(8, 19)),
+                Token::new(TokenKind::Eof, TextSpan(19, 19))
+            ]
+        );
+    }
+
+    #[test]
+    fn test_multiple_commands() {
+        let mut lexer = Lexer::new("/start then /middle and /end");
+        let tokens = lexer.lex();
+        assert_eq!(
+            tokens,
+            vec![
+                Token::new(TokenKind::Command("/start".to_owned()), TextSpan(0, 6)),
+                Token::new(
+                    TokenKind::Text(" then /middle and /end".to_owned()),
+                    TextSpan(6, 28)
+                ),
+                Token::new(TokenKind::Eof, TextSpan(28, 28))
+            ]
+        );
     }
 }
