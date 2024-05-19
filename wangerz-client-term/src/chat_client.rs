@@ -51,17 +51,6 @@ impl ChatHistory {
         Self { entries: vec![] }
     }
 
-    pub(crate) fn info(&mut self, msg: impl Into<String>) {
-        self.entries.push(vec![(
-            msg.into(),
-            ChatHistoryPartStyle::new(
-                style::Color::White,
-                style::Color::Reset,
-                crate::CellStyle::Normal,
-            ),
-        )]);
-    }
-
     pub(crate) fn error(&mut self, msg: impl Into<String>) {
         self.entries.push(vec![(
             msg.into(),
@@ -73,7 +62,7 @@ impl ChatHistory {
         )]);
     }
 
-    pub(crate) fn message(&mut self, msg: &str) {
+    pub(crate) fn message(&mut self, msg: &str, timestamp: &str) {
         fn parts_for_node(
             node: wangerz_message_parser::AstNode,
         ) -> Vec<(String, ChatHistoryPartStyle)> {
@@ -134,11 +123,35 @@ impl ChatHistory {
         }
 
         let parsed = wangerz_message_parser::parse(msg);
-        let entry = parsed
+        let mut entry = parsed
             .nodes
             .into_iter()
             .flat_map(parts_for_node)
             .collect::<Vec<_>>();
+
+        // @REFACTOR: Come up with a better way to prepend the timestamp
+        entry.insert(
+            0,
+            (
+                timestamp.to_owned(),
+                ChatHistoryPartStyle::new(
+                    style::Color::Grey,
+                    style::Color::DarkGrey,
+                    crate::CellStyle::Bold,
+                ),
+            ),
+        );
+        entry.insert(
+            1,
+            (
+                " ".to_owned(),
+                ChatHistoryPartStyle::new(
+                    style::Color::Reset,
+                    style::Color::Reset,
+                    crate::CellStyle::Normal,
+                ),
+            ),
+        );
 
         self.entries.push(entry);
     }
@@ -190,8 +203,7 @@ impl ChatClient {
                     let timestamp = self.to_local_time(timestamp);
 
                     if !message.is_empty() {
-                        self.history
-                            .message(&format!("{}: {}", timestamp, &message));
+                        self.history.message(&message, &timestamp);
                         self.buf_message.clear();
                     }
                 }

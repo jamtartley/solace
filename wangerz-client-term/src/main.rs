@@ -388,6 +388,7 @@ fn main() -> anyhow::Result<()> {
                         event::KeyCode::Char('c')
                             if modifiers.contains(event::KeyModifiers::CONTROL) =>
                         {
+                            // @TODO: Revisit quitting method
                             chat_client.should_quit = true
                         }
                         event::KeyCode::Enter => {
