@@ -2,16 +2,19 @@
 
 /// The structure of the request is as follows:
 /// - The first byte represents the version flag.
+/// - The next 4 bytes represent the request ID.
 /// - The remaining bytes represent the message, ending with a `\r\n` terminator.
 ///
 /// # Fields
 ///
 /// - `version`: A `u8` representing the version of the request protocol.
+/// - `request_id`: A `u32` representing a unique identifier for the request.
 /// - `message`: A `String` containing the message.
 #[derive(Debug, Default)]
 pub struct Request {
-    pub version: u8,
+    pub id: u32,
     pub message: String,
+    pub version: u8,
 }
 
 pub struct RequestBuilder {
@@ -34,6 +37,7 @@ impl RequestBuilder {
     pub fn build(&self) -> Request {
         Request {
             version: 1,
+            id: rand::random(),
             message: self.message.clone(),
         }
     }
@@ -42,6 +46,7 @@ impl RequestBuilder {
 impl Request {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![self.version];
+        bytes.extend(self.id.to_be_bytes());
         bytes.extend(self.message.as_bytes());
         bytes.extend(b"\r\n");
 
@@ -62,9 +67,14 @@ impl TryFrom<Vec<u8>> for Request {
             }
 
             let version = parseable[0];
-            let message = String::from_utf8(parseable[1..].to_owned())?;
+            let id = u32::from_be_bytes([parseable[1], parseable[2], parseable[3], parseable[4]]);
+            let message = String::from_utf8(parseable[5..].to_owned())?;
 
-            return Ok(Self { version, message });
+            return Ok(Self {
+                id,
+                message,
+                version,
+            });
         }
 
         Err(anyhow::anyhow!("Invalid request"))
