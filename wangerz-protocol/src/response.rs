@@ -22,20 +22,32 @@ pub struct Response {
     pub request_id: u32,
     pub timestamp: u64,
     pub code: u16,
+    pub origin_length: u8,
+    pub origin: String,
     pub message: String,
 }
 
 impl Response {
     pub fn new(request_id: u32, code: u16, message: String) -> Self {
         let timestamp = chrono::Utc::now().timestamp() as u64;
+        let origin = "".to_owned();
 
         Self {
             version: 1,
             request_id,
             timestamp,
             code,
+            origin_length: origin.len() as u8,
+            origin,
             message: message.clone(),
         }
+    }
+
+    pub fn with_origin(mut self, origin: String) -> Self {
+        self.origin_length = origin.len() as u8;
+        self.origin = origin;
+
+        self
     }
 
     pub fn as_bytes(&self) -> Vec<u8> {
@@ -43,6 +55,8 @@ impl Response {
         bytes.extend(&self.request_id.to_be_bytes());
         bytes.extend(&self.timestamp.to_be_bytes());
         bytes.extend(&self.code.to_be_bytes());
+        bytes.extend(&self.origin_length.to_be_bytes());
+        bytes.extend(self.origin.as_bytes());
         bytes.extend(self.message.as_bytes());
         bytes.extend(b"\r\n");
 
@@ -85,13 +99,18 @@ impl TryFrom<Vec<u8>> for Response {
                 parseable[12],
             ]);
             let code = u16::from_be_bytes([parseable[13], parseable[14]]);
-            let message = String::from_utf8(parseable[15..].to_owned())?;
+            let origin_length = u8::from_be_bytes([parseable[15]]);
+            let origin_end = 16 + origin_length;
+            let origin = String::from_utf8(parseable[16..origin_end as usize].to_vec())?;
+            let message = String::from_utf8(parseable[origin_end as usize..].to_vec())?;
 
             return Ok(Self {
                 version,
                 request_id,
                 timestamp,
                 code,
+                origin,
+                origin_length,
                 message,
             });
         }

@@ -62,7 +62,7 @@ impl ChatHistory {
         )]);
     }
 
-    pub(crate) fn message(&mut self, msg: &str, timestamp: &str) {
+    pub(crate) fn message(&mut self, msg: &str, timestamp: &str, _origin: &str) {
         fn parts_for_node(
             node: wangerz_message_parser::AstNode,
         ) -> Vec<(String, ChatHistoryPartStyle)> {
@@ -129,7 +129,7 @@ impl ChatHistory {
             .flat_map(parts_for_node)
             .collect::<Vec<_>>();
 
-        // @REFACTOR: Come up with a better way to prepend the timestamp
+        // @REFACTOR: Come up with a better way to prepend metadata to chat log entry
         entry.insert(
             0,
             (
@@ -198,12 +198,15 @@ impl ChatClient {
                 Ok(n) if n > 0 => {
                     self.buf_message.extend_from_slice(&buf_tmp[..n]);
                     let Response {
-                        message, timestamp, ..
+                        message,
+                        origin,
+                        timestamp,
+                        ..
                     } = Response::try_from(self.buf_message.clone())?;
                     let timestamp = self.to_local_time(timestamp);
 
                     if !message.is_empty() {
-                        self.history.message(&message, &timestamp);
+                        self.history.message(&message, &timestamp, &origin);
                         self.buf_message.clear();
                     }
                 }
