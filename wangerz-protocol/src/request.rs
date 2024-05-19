@@ -1,3 +1,7 @@
+use std::{io::Write, net::TcpStream};
+
+use anyhow::Context;
+
 /// The structure of the request is as follows:
 /// - The first byte represents the version flag.
 /// - The next 4 bytes represent the request ID.
@@ -49,6 +53,12 @@ impl Request {
         bytes.extend(b"\r\n");
 
         bytes
+    }
+
+    pub fn write_to(&self, stream: &mut TcpStream) -> anyhow::Result<()> {
+        stream
+            .write_all(&self.as_bytes())
+            .context("ERROR: Failed to write to stream")
     }
 }
 

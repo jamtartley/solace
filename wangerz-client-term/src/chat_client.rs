@@ -1,7 +1,6 @@
 use std::{
-    io::{ErrorKind, Read, Write},
+    io::{ErrorKind, Read},
     net::TcpStream,
-    str,
 };
 
 use crossterm::style;
@@ -172,9 +171,10 @@ impl ChatClient {
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            let request = RequestBuilder::new().with_message(to_send).build();
-
-            tcp_stream.write_all(&request.as_bytes())?;
+            RequestBuilder::new()
+                .with_message(to_send)
+                .build()
+                .write_to(tcp_stream)?;
         }
 
         Ok(())

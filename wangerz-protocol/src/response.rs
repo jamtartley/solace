@@ -1,4 +1,11 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    io::Write,
+    net::TcpStream,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use anyhow::Context;
 
 /// The structure of the response is as follows:
 /// - The first byte represents the version flag.
@@ -79,6 +86,15 @@ impl Response {
         bytes.extend(b"\r\n");
 
         bytes
+    }
+
+    // @CLEANUP: Align signature with Request::write_to()
+    pub fn write_to(&self, stream: &Arc<TcpStream>) -> anyhow::Result<()> {
+        stream
+            .clone()
+            .as_ref()
+            .write_all(&self.as_bytes())
+            .context("ERROR: Failed to write to stream")
     }
 }
 

@@ -118,16 +118,11 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     },
                 );
 
-                let response = ResponseBuilder::new()
+                ResponseBuilder::new()
                     .with_message("Welcome to wangerz!".to_owned())
                     .with_code(1)
-                    .build();
-
-                author
-                    .clone()
-                    .as_ref()
-                    .write_all(&response.as_bytes())
-                    .context("ERROR: Could not send welcome message")?;
+                    .build()
+                    .write_to(&author)?;
 
                 println!("INFO: Client {addr} connected");
             }
