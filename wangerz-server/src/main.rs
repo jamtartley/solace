@@ -4,7 +4,7 @@ mod command;
 
 use std::{
     collections::HashMap,
-    io::{Read, Write},
+    io::Read,
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         mpsc::{channel, Receiver, Sender},
@@ -18,7 +18,7 @@ use command::parse_command;
 
 use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
-    code::{RES_CHAT_MESSAGE_OK, RES_WELCOME},
+    code::{ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_WELCOME},
     request::Request,
     response::Response,
 };
@@ -69,11 +69,13 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                         if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
                             (command.execute)(&stream, &messages)?
                         } else {
-                            writeln!(
-                                stream.as_ref(),
-                                "ERROR: Command '{raw_name}' not found or invalid\r\n"
-                            ).context("ERROR: Failed to write 'invalid command' message to client: {addr}")?;
-                            eprintln!("ERROR: Command not found or invalid");
+                            Response::new(
+                                0,
+                                ERR_COMMAND_NOT_FOUND,
+                                format!("Command {} not found", raw_name),
+                            )
+                            .write_to(&stream)?;
+                            println!("WEICMEOWIMC");
                         }
                     }
                     Some(_) => {

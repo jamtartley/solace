@@ -1,7 +1,8 @@
 use anyhow::Context;
-use std::io::Write;
 use std::sync::mpsc::Sender;
 use std::{net::TcpStream, sync::Arc};
+use wangerz_protocol::code::{RES_DISCONNECTED, RES_PONG};
+use wangerz_protocol::response::Response;
 
 use crate::Message;
 
@@ -19,7 +20,8 @@ const COMMANDS: &[Command] = &[
         description: "Ping the server",
         usage: "/ping",
         execute: |stream, _| {
-            writeln!(stream.as_ref(), "PONG\r\n").context("ERROR: Could not send PONG")?;
+            Response::new(0, RES_PONG, "pong".to_owned()).write_to(stream)?;
+
             Ok(())
         },
     },
@@ -31,9 +33,14 @@ const COMMANDS: &[Command] = &[
             let addr = stream
                 .peer_addr()
                 .context("ERROR: Failed to get client socket address")?;
-            // @FEATURE: Provide a reason for disconnecting
-            writeln!(stream.as_ref(), "You have disconnected.\r\n")
-                .context("ERROR: Could not write disconnect message to client")?;
+
+            Response::new(
+                0,
+                RES_DISCONNECTED,
+                "You have disconnected from wangerz".to_owned(),
+            )
+            .write_to(stream)?;
+
             messages
                 .send(Message::ClientDisconnected { addr })
                 .context("ERROR: Could not send disconnected message to client: {addr}")?;

@@ -133,7 +133,7 @@ impl ChatHistory {
         entry.insert(
             0,
             (
-                timestamp.to_owned(),
+                format!(" {} ", timestamp),
                 ChatHistoryPartStyle::new(
                     style::Color::Grey,
                     style::Color::DarkGrey,
