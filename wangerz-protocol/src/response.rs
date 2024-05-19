@@ -1,9 +1,4 @@
-use std::{
-    io::Write,
-    net::TcpStream,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{io::Write, net::TcpStream, sync::Arc};
 
 use anyhow::Context;
 
@@ -32,10 +27,7 @@ pub struct Response {
 
 impl Response {
     pub fn new(request_id: u32, code: u16, message: String) -> Self {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let timestamp = chrono::Utc::now().timestamp() as u64;
 
         Self {
             version: 1,

@@ -10,4 +10,3 @@ wangerz-message-parser = { path = "../wangerz-message-parser" }
 wangerz-protocol = { path = "../wangerz-protocol" }
 
 anyhow = "1.0.83"
-chrono = "0.4.38"

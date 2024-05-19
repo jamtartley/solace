@@ -184,10 +184,14 @@ impl ChatClient {
             match tcp_stream.read(&mut buf_tmp) {
                 Ok(n) if n > 0 => {
                     self.buf_message.extend_from_slice(&buf_tmp[..n]);
-                    let Response { message, .. } = Response::try_from(self.buf_message.clone())?;
+                    let Response {
+                        message, timestamp, ..
+                    } = Response::try_from(self.buf_message.clone())?;
+                    let timestamp = self.to_local_time(timestamp);
 
                     if !message.is_empty() {
-                        self.history.message(&message);
+                        self.history
+                            .message(&format!("{}: {}", timestamp, &message));
                         self.buf_message.clear();
                     }
                 }
@@ -204,5 +208,16 @@ impl ChatClient {
         }
 
         Ok(())
+    }
+
+    fn to_local_time(&self, timestamp: u64) -> String {
+        use chrono::{Local, TimeZone, Utc};
+
+        let local = Utc
+            .timestamp_opt(timestamp as i64, 0)
+            .unwrap()
+            .with_timezone(&Local);
+
+        local.format("%H:%M:%S").to_string()
     }
 }
