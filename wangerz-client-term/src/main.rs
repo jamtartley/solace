@@ -230,7 +230,10 @@ impl Prompt {
     fn handle_insert(&mut self, key_code: event::KeyCode) {
         match key_code {
             event::KeyCode::Char(ch) => self.insert(ch),
-            event::KeyCode::Esc => self.mode = Mode::Normal,
+            event::KeyCode::Esc => {
+                self.mode = Mode::Normal;
+                self.pos = self.pos.saturating_sub(1);
+            }
             event::KeyCode::Backspace => self.remove(),
             event::KeyCode::Up => self.fetch_previous(),
             event::KeyCode::Down => self.fetch_next(),
@@ -241,19 +244,58 @@ impl Prompt {
     fn handle_normal(&mut self, key_code: event::KeyCode) {
         match key_code {
             event::KeyCode::Char('i') => self.mode = Mode::Insert,
+            event::KeyCode::Char('h') => self.pos = self.pos.saturating_sub(1),
+            event::KeyCode::Char('l') => self.pos = (self.pos + 1).clamp(0, self.curr.len() - 1),
+            event::KeyCode::Char('I') => {
+                self.mode = Mode::Insert;
+                self.pos = 0;
+            }
+            event::KeyCode::Char('a') => {
+                self.mode = Mode::Insert;
+                if self.pos < self.curr.len() {
+                    self.pos += 1;
+                }
+            }
+            event::KeyCode::Char('A') => {
+                self.mode = Mode::Insert;
+                self.pos = self.curr.len();
+            }
+            event::KeyCode::Char('D') => {
+                self.curr = self
+                    .curr
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| i < &self.pos)
+                    .map(|(_, val)| *val)
+                    .collect::<Vec<char>>();
+                self.pos = self.pos.clamp(0, self.curr.len() - 1);
+            }
+            event::KeyCode::Char('x') => {
+                if !self.curr.is_empty() {
+                    self.curr.remove(self.pos);
+                    self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
+                }
+            }
+            event::KeyCode::Char('X') => self.clear(),
+            event::KeyCode::Char('0') => self.pos = 0,
+            event::KeyCode::Char('$') => self.pos = self.curr.len(),
             event::KeyCode::Up => self.fetch_previous(),
             event::KeyCode::Down => self.fetch_next(),
             _ => (),
         }
     }
 
+    fn clear(&mut self) {
+        self.curr.clear();
+        self.pos = 0;
+        self.mode = Mode::Insert;
+    }
+
     fn flush(&mut self) {
         self.history.push(self.curr.iter().collect::<String>());
         self.history_offset = 0;
 
-        self.curr.clear();
-        self.pos = 0;
-        self.mode = Mode::Insert;
+        self.clear()
     }
 
     fn fetch_previous(&mut self) {
@@ -406,7 +448,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         stdout
-            .queue(cursor::MoveTo(prompt.curr.len() as u16, size.1 - 1))?
+            .queue(cursor::MoveTo(prompt.pos as u16, size.1 - 1))?
             .queue(match prompt.mode {
                 Mode::Insert => cursor::SetCursorStyle::SteadyBar,
                 Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
