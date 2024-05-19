@@ -175,7 +175,7 @@ impl ChatClient {
                 .with_message(to_send)
                 .build();
 
-            tcp_stream.write_all(request.to_string().as_bytes())?;
+            tcp_stream.write_all(&request.as_bytes())?;
         }
 
         Ok(())

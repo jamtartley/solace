@@ -55,7 +55,6 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                 buf_message.extend_from_slice(&buf_tmp[..n]);
 
                 let req = wangerz_protocol::Request::try_from(buf_message.clone())?;
-                println!("{req:?}");
                 let ast = wangerz_message_parser::parse(&req.message);
 
                 // @FEATURE: Handle pinging mentioned users

@@ -39,13 +39,13 @@ impl RequestBuilder {
     }
 }
 
-impl ToString for Request {
-    fn to_string(&self) -> String {
-        let mut req_str = String::from_utf8_lossy(&[self.version]).to_string();
-        req_str.push_str(&self.message);
-        req_str.push_str("\r\n");
+impl Request {
+    pub fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![self.version];
+        bytes.extend(self.message.as_bytes());
+        bytes.extend(b"\r\n");
 
-        req_str
+        bytes
     }
 }
 
