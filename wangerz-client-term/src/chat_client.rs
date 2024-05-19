@@ -5,6 +5,7 @@ use std::{
 };
 
 use crossterm::style;
+use wangerz_protocol::{request::RequestBuilder, response::Response};
 
 use crate::Renderable;
 
@@ -171,9 +172,7 @@ impl ChatClient {
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            let request = wangerz_protocol::RequestBuilder::new()
-                .with_message(to_send)
-                .build();
+            let request = RequestBuilder::new().with_message(to_send).build();
 
             tcp_stream.write_all(&request.as_bytes())?;
         }
@@ -188,20 +187,11 @@ impl ChatClient {
             match tcp_stream.read(&mut buf_tmp) {
                 Ok(n) if n > 0 => {
                     self.buf_message.extend_from_slice(&buf_tmp[..n]);
+                    let Response { message, .. } = Response::try_from(self.buf_message.clone())?;
 
-                    if let Some(pos) = self
-                        .buf_message
-                        .windows(2)
-                        .position(|window| window == b"\r\n")
-                    {
-                        let raw_message = self.buf_message.drain(..pos).collect::<Vec<u8>>();
-
-                        if let Ok(message) = str::from_utf8(&raw_message) {
-                            if !message.is_empty() {
-                                self.history.message(message);
-                                self.buf_message.clear();
-                            }
-                        }
+                    if !message.is_empty() {
+                        self.history.message(&message);
+                        self.buf_message.clear();
                     }
                 }
                 Ok(0) => {

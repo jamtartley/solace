@@ -15,7 +15,9 @@ use std::{
 
 use anyhow::Context;
 use command::parse_command;
+
 use wangerz_message_parser::AstNode;
+use wangerz_protocol::{request::Request, response::ResponseBuilder};
 
 struct Client {
     conn: Arc<TcpStream>,
@@ -54,7 +56,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
             Ok(n) => {
                 buf_message.extend_from_slice(&buf_tmp[..n]);
 
-                let req = wangerz_protocol::Request::try_from(buf_message.clone())?;
+                let req = Request::try_from(buf_message.clone())?;
                 let ast = wangerz_message_parser::parse(&req.message);
 
                 // @FEATURE: Handle pinging mentioned users
@@ -116,8 +118,17 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     },
                 );
 
-                writeln!(author.clone().as_ref(), "Welcome to wangerz!\r\n")
+                let response = ResponseBuilder::new()
+                    .with_message("Welcome to wangerz!".to_owned())
+                    .with_code(1)
+                    .build();
+
+                author
+                    .clone()
+                    .as_ref()
+                    .write_all(&response.as_bytes())
                     .context("ERROR: Could not send welcome message")?;
+
                 println!("INFO: Client {addr} connected");
             }
             Message::ClientDisconnected { addr } => {
@@ -129,12 +140,21 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 if clients.contains_key(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
-                    let timestamp = chrono::Utc::now().format("%H:%M:%S");
+                    let response = ResponseBuilder::new()
+                        .with_message(message)
+                        .with_code(1)
+                        .build();
 
                     for (_, client) in clients.iter_mut() {
-                        writeln!(client.conn.as_ref(), "{timestamp} -> {message}\r\n").context(
-                            "ERROR: could not broadcast message to all the clients from {from}:",
-                        )?;
+                        let response_bytes = response.as_bytes();
+                        client
+                            .conn
+                            .as_ref()
+                            .write_all(&response_bytes)
+                            .context(format!(
+                                "ERROR: Failed to write response to client {}",
+                                client.ip
+                            ))?;
                     }
                 }
             }
