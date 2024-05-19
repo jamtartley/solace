@@ -30,53 +30,22 @@ pub struct Response {
     pub message: String,
 }
 
-#[derive(Default)]
-pub struct ResponseBuilder {
-    request_id: u32,
-    code: u16,
-    message: String,
-}
-
-impl ResponseBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_request_id(mut self, request_id: u32) -> Self {
-        self.request_id = request_id;
-
-        self
-    }
-
-    pub fn with_code(mut self, code: u16) -> Self {
-        self.code = code;
-
-        self
-    }
-
-    pub fn with_message(mut self, message: String) -> Self {
-        self.message = message;
-
-        self
-    }
-
-    pub fn build(&self) -> Response {
+impl Response {
+    pub fn new(request_id: u32, code: u16, message: String) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        Response {
+        Self {
             version: 1,
-            request_id: self.request_id,
+            request_id,
             timestamp,
-            code: self.code,
-            message: self.message.clone(),
+            code,
+            message: message.clone(),
         }
     }
-}
 
-impl Response {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![self.version];
         bytes.extend(&self.request_id.to_be_bytes());

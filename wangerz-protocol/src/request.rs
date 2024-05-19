@@ -19,33 +19,15 @@ pub struct Request {
     pub message: String,
 }
 
-pub struct RequestBuilder {
-    message: String,
-}
-
-impl RequestBuilder {
-    pub fn new() -> Self {
+impl Request {
+    pub fn new(message: String) -> Self {
         Self {
-            message: String::default(),
-        }
-    }
-
-    pub fn with_message(&mut self, message: String) -> &Self {
-        self.message = message;
-
-        self
-    }
-
-    pub fn build(&self) -> Request {
-        Request {
             version: 1,
             id: rand::random(),
-            message: self.message.clone(),
+            message: message.clone(),
         }
     }
-}
 
-impl Request {
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![self.version];
         bytes.extend(self.id.to_be_bytes());

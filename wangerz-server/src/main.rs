@@ -17,7 +17,11 @@ use anyhow::Context;
 use command::parse_command;
 
 use wangerz_message_parser::AstNode;
-use wangerz_protocol::{request::Request, response::ResponseBuilder};
+use wangerz_protocol::{
+    code::{RES_CHAT_MESSAGE_OK, RES_WELCOME},
+    request::Request,
+    response::Response,
+};
 
 struct Client {
     conn: Arc<TcpStream>,
@@ -118,10 +122,8 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     },
                 );
 
-                ResponseBuilder::new()
-                    .with_message("Welcome to wangerz!".to_owned())
-                    .with_code(1)
-                    .build()
+                // @FIXME: Forward request id
+                Response::new(0, RES_WELCOME, "Welcome to wangerz!".to_owned())
                     .write_to(&author)?;
 
                 println!("INFO: Client {addr} connected");
@@ -135,21 +137,11 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 if clients.contains_key(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
-                    let response = ResponseBuilder::new()
-                        .with_message(message)
-                        .with_code(1)
-                        .build();
+                    // @FIXME: Forward request id
+                    let response = Response::new(0, RES_CHAT_MESSAGE_OK, message);
 
                     for (_, client) in clients.iter_mut() {
-                        let response_bytes = response.as_bytes();
-                        client
-                            .conn
-                            .as_ref()
-                            .write_all(&response_bytes)
-                            .context(format!(
-                                "ERROR: Failed to write response to client {}",
-                                client.ip
-                            ))?;
+                        response.write_to(&client.conn)?;
                     }
                 }
             }

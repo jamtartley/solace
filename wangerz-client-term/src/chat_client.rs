@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::style;
-use wangerz_protocol::{request::RequestBuilder, response::Response};
+use wangerz_protocol::{request::Request, response::Response};
 
 use crate::Renderable;
 
@@ -171,10 +171,7 @@ impl ChatClient {
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            RequestBuilder::new()
-                .with_message(to_send)
-                .build()
-                .write_to(tcp_stream)?;
+            Request::new(to_send).write_to(tcp_stream)?;
         }
 
         Ok(())
