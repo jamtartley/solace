@@ -2,7 +2,7 @@ use anyhow::Context;
 use std::sync::mpsc::Sender;
 use std::{net::TcpStream, sync::Arc};
 use wangerz_protocol::code::{RES_DISCONNECTED, RES_PONG};
-use wangerz_protocol::response::Response;
+use wangerz_protocol::response::ResponseBuilder;
 
 use crate::Message;
 
@@ -20,7 +20,9 @@ const COMMANDS: &[Command] = &[
         description: "Ping the server",
         usage: "/ping",
         execute: |stream, _| {
-            Response::new(0, RES_PONG, "pong".to_owned()).write_to(stream)?;
+            ResponseBuilder::new(RES_PONG, "pong".to_owned())
+                .build()
+                .write_to(stream)?;
 
             Ok(())
         },
@@ -34,11 +36,11 @@ const COMMANDS: &[Command] = &[
                 .peer_addr()
                 .context("ERROR: Failed to get client socket address")?;
 
-            Response::new(
-                0,
+            ResponseBuilder::new(
                 RES_DISCONNECTED,
                 "You have disconnected from wangerz".to_owned(),
             )
+            .build()
             .write_to(stream)?;
 
             messages

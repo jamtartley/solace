@@ -28,28 +28,6 @@ pub struct Response {
 }
 
 impl Response {
-    pub fn new(request_id: u32, code: u16, message: String) -> Self {
-        let timestamp = chrono::Utc::now().timestamp() as u64;
-        let origin = "".to_owned();
-
-        Self {
-            version: 1,
-            request_id,
-            timestamp,
-            code,
-            origin_length: origin.len() as u8,
-            origin,
-            message: message.clone(),
-        }
-    }
-
-    pub fn with_origin(mut self, origin: String) -> Self {
-        self.origin_length = origin.len() as u8;
-        self.origin = origin;
-
-        self
-    }
-
     pub fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![self.version];
         bytes.extend(&self.request_id.to_be_bytes());
@@ -101,8 +79,8 @@ impl TryFrom<Vec<u8>> for Response {
             let code = u16::from_be_bytes([parseable[13], parseable[14]]);
             let origin_length = u8::from_be_bytes([parseable[15]]);
             let origin_end = 16 + origin_length;
-            let origin = String::from_utf8(parseable[16..origin_end as usize].to_vec())?;
-            let message = String::from_utf8(parseable[origin_end as usize..].to_vec())?;
+            let origin = String::from_utf8(parseable[16..usize::from(origin_end)].to_vec())?;
+            let message = String::from_utf8(parseable[usize::from(origin_end)..].to_vec())?;
 
             return Ok(Self {
                 version,
@@ -116,5 +94,48 @@ impl TryFrom<Vec<u8>> for Response {
         }
 
         Err(anyhow::anyhow!("Invalid response"))
+    }
+}
+
+#[derive(Default)]
+pub struct ResponseBuilder {
+    request_id: u32,
+    code: u16,
+    origin: String,
+    message: String,
+}
+
+impl ResponseBuilder {
+    pub fn new(code: u16, message: String) -> Self {
+        Self {
+            code,
+            message,
+            ..Self::default()
+        }
+    }
+
+    pub fn with_request_id(mut self, request_id: u32) -> Self {
+        self.request_id = request_id;
+
+        self
+    }
+
+    pub fn with_origin(mut self, origin: String) -> Self {
+        self.origin = origin;
+
+        self
+    }
+
+    pub fn build(self) -> Response {
+        Response {
+            version: 1,
+            request_id: self.request_id,
+            timestamp: u64::try_from(chrono::Utc::now().timestamp())
+                .expect("ERROR: Timestamp exceeds u64::MAX"),
+            code: self.code,
+            origin_length: u8::try_from(self.origin.len()).expect("ERROR: Origin too long"),
+            origin: self.origin,
+            message: self.message,
+        }
     }
 }

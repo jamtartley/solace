@@ -20,7 +20,7 @@ use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
     code::{ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_WELCOME},
     request::Request,
-    response::Response,
+    response::ResponseBuilder,
 };
 
 struct Client {
@@ -29,10 +29,18 @@ struct Client {
 }
 
 pub(crate) enum Message {
-    ClientConnected { author: Arc<TcpStream> },
-    ClientDisconnected { addr: SocketAddr },
+    ClientConnected {
+        author: Arc<TcpStream>,
+    },
+    ClientDisconnected {
+        addr: SocketAddr,
+    },
     // @FEATURE: Extend to target specific clients
-    Sent { from: SocketAddr, message: String },
+    Sent {
+        from: SocketAddr,
+        message: String,
+        request_id: u32,
+    },
 }
 
 fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::Result<()> {
@@ -69,11 +77,11 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                         if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
                             (command.execute)(&stream, &messages)?
                         } else {
-                            Response::new(
-                                0,
+                            ResponseBuilder::new(
                                 ERR_COMMAND_NOT_FOUND,
                                 format!("Command {} not found", raw_name),
                             )
+                            .build()
                             .write_to(&stream)?;
                             println!("WEICMEOWIMC");
                         }
@@ -83,6 +91,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                             .send(Message::Sent {
                                 from: addr,
                                 message: req.message.to_owned(),
+                                request_id: req.id,
                             })
                             .context("ERROR: Could not send message")?;
                     }
@@ -125,7 +134,8 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 );
 
                 // @FIXME: Forward request id
-                Response::new(0, RES_WELCOME, "Welcome to wangerz!".to_owned())
+                ResponseBuilder::new(RES_WELCOME, "Welcome to wangerz!".to_owned())
+                    .build()
                     .write_to(&author)?;
 
                 println!("INFO: Client {addr} connected");
@@ -135,12 +145,19 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
 
                 println!("INFO: Client {addr} disconnected");
             }
-            Message::Sent { from, message } => {
+            Message::Sent {
+                from,
+                message,
+                request_id,
+            } => {
                 if clients.contains_key(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     // @FIXME: Forward request id
-                    let response = Response::new(0, RES_CHAT_MESSAGE_OK, message);
+                    let response = ResponseBuilder::new(RES_CHAT_MESSAGE_OK, message)
+                        .with_request_id(request_id)
+                        .with_origin(format!("{from}"))
+                        .build();
 
                     for (_, client) in clients.iter_mut() {
                         response.write_to(&client.conn)?;
