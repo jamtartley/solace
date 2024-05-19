@@ -295,11 +295,19 @@ dependencies = [
  "anyhow",
  "crossterm",
  "wangerz-message-parser",
+ "wangerz-protocol",
 ]
 
 [[package]]
 name = "wangerz-message-parser"
 version = "0.1.0"
+
+[[package]]
+name = "wangerz-protocol"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
 
 [[package]]
 name = "wangerz-server"
@@ -308,6 +316,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "wangerz-message-parser",
+ "wangerz-protocol",
 ]
 
 [[package]]

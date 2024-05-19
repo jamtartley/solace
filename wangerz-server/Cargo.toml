@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wangerz-message-parser = { path = "../wangerz-message-parser"}
+wangerz-message-parser = { path = "../wangerz-message-parser" }
+wangerz-protocol = { path = "../wangerz-protocol" }
 
 anyhow = "1.0.83"
 chrono = "0.4.38"

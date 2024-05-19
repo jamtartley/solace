@@ -6,7 +6,6 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    str,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc,
@@ -16,6 +15,7 @@ use std::{
 
 use anyhow::Context;
 use command::parse_command;
+use wangerz_message_parser::AstNode;
 
 struct Client {
     conn: Arc<TcpStream>,
@@ -54,50 +54,37 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
             Ok(n) => {
                 buf_message.extend_from_slice(&buf_tmp[..n]);
 
-                if let Some(pos) = buf_message.windows(2).position(|window| window == b"\r\n") {
-                    let message = buf_message.drain(..pos).collect::<Vec<u8>>();
+                let req = wangerz_protocol::Request::try_from(buf_message.clone())?;
+                println!("{req:?}");
+                let ast = wangerz_message_parser::parse(&req.message);
 
-                    match str::from_utf8(&message) {
-                        Ok(message) => {
-                            if message.is_empty() {
-                                continue;
-                            }
-
-                            let ast = wangerz_message_parser::parse(message);
-
-                            // @FEATURE: Handle pinging mentioned users
-                            match ast.nodes.first() {
-                                Some(wangerz_message_parser::AstNode::Command {
-                                    raw_name, ..
-                                }) => {
-                                    if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
-                                        (command.execute)(&stream, &messages)?
-                                    } else {
-                                        writeln!(
-                                            stream.as_ref(),
-                                            "ERROR: Command '{raw_name}' not found or invalid\r\n"
-                                        ).context("ERROR: Failed to write 'invalid command' message to client: {addr}")?;
-                                        eprintln!("ERROR: Command not found or invalid");
-                                    }
-                                }
-                                Some(_) => {
-                                    messages
-                                        .send(Message::Sent {
-                                            from: addr,
-                                            message: message.to_owned(),
-                                        })
-                                        .context("ERROR: Could not send message")?;
-                                }
-                                None => {
-                                    eprintln!("ERROR: Received empty message or parsing failed");
-                                }
-                            }
-
-                            buf_message.clear();
+                // @FEATURE: Handle pinging mentioned users
+                match ast.nodes.first() {
+                    Some(AstNode::Command { raw_name, .. }) => {
+                        if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
+                            (command.execute)(&stream, &messages)?
+                        } else {
+                            writeln!(
+                                stream.as_ref(),
+                                "ERROR: Command '{raw_name}' not found or invalid\r\n"
+                            ).context("ERROR: Failed to write 'invalid command' message to client: {addr}")?;
+                            eprintln!("ERROR: Command not found or invalid");
                         }
-                        Err(e) => eprintln!("ERROR: Could not decode message into UTF-8: {e}"),
+                    }
+                    Some(_) => {
+                        messages
+                            .send(Message::Sent {
+                                from: addr,
+                                message: req.message.to_owned(),
+                            })
+                            .context("ERROR: Could not send message")?;
+                    }
+                    None => {
+                        eprintln!("ERROR: Received empty message or parsing failed");
                     }
                 }
+
+                buf_message.clear();
             }
             Err(_) => {
                 messages

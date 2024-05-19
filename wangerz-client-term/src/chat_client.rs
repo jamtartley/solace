@@ -171,9 +171,11 @@ impl ChatClient {
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            let with_newlines = format!("{to_send}\r\n");
+            let request = wangerz_protocol::RequestBuilder::new()
+                .with_message(to_send)
+                .build();
 
-            tcp_stream.write_all(with_newlines.as_bytes())?;
+            tcp_stream.write_all(request.to_string().as_bytes())?;
         }
 
         Ok(())
