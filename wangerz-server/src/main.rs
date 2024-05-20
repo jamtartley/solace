@@ -19,7 +19,7 @@ use command::parse_command;
 use rand::Rng;
 use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
-    code::{ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_WELCOME},
+    code::{ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_NICK_CHANGE, RES_WELCOME},
     request::Request,
     response::ResponseBuilder,
 };
@@ -187,11 +187,23 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
             Message::NickChanged { stream, nickname } => {
                 let addr = &stream.clone().peer_addr().unwrap();
                 if let Some(client) = clients.get_mut(addr) {
-                    client.nick = nickname;
-                    ResponseBuilder::new(RES_CHAT_MESSAGE_OK, "Done".to_owned())
-                        .with_origin(client.nick.clone())
-                        .build()
-                        .write_to(&client.conn)?;
+                    let old_nickname = client.nick.clone();
+                    client.nick = nickname.clone();
+
+                    let nick_notification_user = format!("You are now known as \"{}\"", nickname);
+                    let nick_notification_other =
+                        format!("{} is now known as \"{}\"", old_nickname, nickname);
+
+                    for (_, client) in clients.iter_mut() {
+                        let notification = if client.ip == stream.peer_addr().unwrap() {
+                            nick_notification_user.clone()
+                        } else {
+                            nick_notification_other.clone()
+                        };
+                        ResponseBuilder::new(RES_NICK_CHANGE, notification)
+                            .build()
+                            .write_to(&client.conn)?;
+                    }
                 }
             }
         }

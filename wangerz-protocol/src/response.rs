@@ -24,6 +24,10 @@ pub struct Response {
     pub code: u16,
     pub origin_length: u8,
     pub origin: String,
+
+    // @FEATURE: Should message take a format which can be parsed
+    // into a different AST node? So that it can be displayed differently
+    // in the client - i.e. nick change messages could be in grey
     pub message: String,
 }
 

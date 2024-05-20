@@ -69,13 +69,18 @@ impl ChatHistory {
     pub(crate) fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
         fn parts_for_node(
             node: wangerz_message_parser::AstNode,
+            has_origin: bool,
         ) -> Vec<(String, ChatHistoryPartStyle)> {
             match node {
                 wangerz_message_parser::AstNode::Text { value, .. } => {
                     vec![(
                         value,
                         ChatHistoryPartStyle::new(
-                            style::Color::White,
+                            if has_origin {
+                                style::Color::White
+                            } else {
+                                style::Color::Grey
+                            },
                             style::Color::Reset,
                             crate::CellStyle::Normal,
                         ),
@@ -110,7 +115,7 @@ impl ChatHistory {
                 } => {
                     let args_parts = args
                         .into_iter()
-                        .flat_map(parts_for_node)
+                        .flat_map(|part| parts_for_node(part, has_origin))
                         .collect::<Vec<_>>();
                     let mut parts = vec![(
                         name,
@@ -126,11 +131,12 @@ impl ChatHistory {
             }
         }
 
+        let has_origin = origin.len() > 0;
         let parsed = wangerz_message_parser::parse(msg);
         let mut entry = parsed
             .nodes
             .into_iter()
-            .flat_map(parts_for_node)
+            .flat_map(|part| parts_for_node(part, has_origin))
             .collect::<Vec<_>>();
 
         // @REFACTOR: Come up with a better way to prepend metadata to chat log entry
@@ -148,9 +154,19 @@ impl ChatHistory {
         entry.insert(
             1,
             (
-                format!(" {origin:<16}"),
+                format!(
+                    " {origin:16}",
+                    origin = format!(
+                        "{marker}{origin:15}",
+                        marker = if has_origin { "@" } else { "--" }
+                    )
+                ),
                 ChatHistoryPartStyle::new(
-                    style::Color::Cyan,
+                    if has_origin {
+                        style::Color::Cyan
+                    } else {
+                        style::Color::Grey
+                    },
                     style::Color::Reset,
                     crate::CellStyle::Bold,
                 ),
