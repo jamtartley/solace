@@ -179,19 +179,16 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                         .with_origin(client.nick.clone())
                         .build();
 
-                    println!("{response:?}");
-
                     for (_, client) in clients.iter_mut() {
                         response.write_to(&client.conn)?;
                     }
                 }
             }
             Message::NickChanged { stream, nickname } => {
-                println!("iejfiwjefioewjiof");
                 let addr = &stream.clone().peer_addr().unwrap();
                 if let Some(client) = clients.get_mut(addr) {
                     client.nick = nickname;
-                    let response = ResponseBuilder::new(RES_CHAT_MESSAGE_OK, "Done".to_owned())
+                    ResponseBuilder::new(RES_CHAT_MESSAGE_OK, "Done".to_owned())
                         .with_origin(client.nick.clone())
                         .build()
                         .write_to(&client.conn)?;

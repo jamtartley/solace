@@ -35,6 +35,10 @@ impl Renderable for ChatHistory {
 
             for part in entry.iter() {
                 for ch in part.0.chars() {
+                    if x >= rect.width {
+                        break;
+                    }
+
                     let y = rect.y + rect.height - 1 - i as u16;
 
                     buf.put_at(x, y, ch, part.1.fg, part.1.bg, part.1.attr);

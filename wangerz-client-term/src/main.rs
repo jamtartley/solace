@@ -245,7 +245,9 @@ impl Prompt {
         match key_code {
             event::KeyCode::Char('i') => self.mode = Mode::Insert,
             event::KeyCode::Char('h') => self.pos = self.pos.saturating_sub(1),
-            event::KeyCode::Char('l') => self.pos = (self.pos + 1).clamp(0, self.curr.len() - 1),
+            event::KeyCode::Char('l') => {
+                self.pos = (self.pos + 1).clamp(0, self.curr.len().saturating_sub(1))
+            }
             event::KeyCode::Char('I') => {
                 self.mode = Mode::Insert;
                 self.pos = 0;

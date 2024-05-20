@@ -57,7 +57,8 @@ const COMMANDS: &[Command] = &[
         execute: |stream, messages, args| {
             match &args.get(0) {
                 Some(AstNode::Text { value, .. }) => {
-                    let nickname = value.clone();
+                    let nickname = value[0..16.min(value.len())].to_owned();
+
                     messages
                         .send(Message::NickChanged {
                             stream: stream.clone(),
