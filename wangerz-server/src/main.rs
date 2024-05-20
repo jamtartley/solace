@@ -16,6 +16,7 @@ use std::{
 use anyhow::Context;
 use command::parse_command;
 
+use rand::Rng;
 use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
     code::{ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_WELCOME},
@@ -26,6 +27,27 @@ use wangerz_protocol::{
 struct Client {
     conn: Arc<TcpStream>,
     ip: SocketAddr,
+    nick: String,
+}
+
+impl Client {
+    fn new(conn: Arc<TcpStream>, ip: SocketAddr) -> Self {
+        let nick = Client::generate_random_nick();
+        println!("{nick:?}");
+
+        Self { conn, ip, nick }
+    }
+
+    fn generate_random_nick() -> String {
+        let len = 16;
+        let mut bytes = vec![0; len];
+
+        for i in 0..len {
+            bytes[i] = rand::thread_rng().gen_range(48..123);
+        }
+
+        String::from_utf8(bytes).unwrap()
+    }
 }
 
 pub(crate) enum Message {
@@ -40,6 +62,10 @@ pub(crate) enum Message {
         from: SocketAddr,
         message: String,
         request_id: u32,
+    },
+    NickChanged {
+        stream: Arc<TcpStream>,
+        nickname: String,
     },
 }
 
@@ -73,9 +99,9 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
 
                 // @FEATURE: Handle pinging mentioned users
                 match ast.nodes.first() {
-                    Some(AstNode::Command { raw_name, .. }) => {
+                    Some(AstNode::Command { raw_name, args, .. }) => {
                         if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
-                            (command.execute)(&stream, &messages)?
+                            (command.execute)(&stream, &messages, args)?
                         } else {
                             ResponseBuilder::new(
                                 ERR_COMMAND_NOT_FOUND,
@@ -125,13 +151,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 let addr = author
                     .peer_addr()
                     .context("ERROR: Failed to get client socket address")?;
-                clients.insert(
-                    addr,
-                    Client {
-                        conn: author.clone(),
-                        ip: addr,
-                    },
-                );
+                clients.insert(addr, Client::new(author.clone(), addr));
 
                 // @FIXME: Forward request id
                 ResponseBuilder::new(RES_WELCOME, "Welcome to wangerz!".to_owned())
@@ -150,18 +170,31 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 message,
                 request_id,
             } => {
-                if clients.contains_key(&from) {
+                if let Some(client) = clients.get(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     // @FIXME: Forward request id
                     let response = ResponseBuilder::new(RES_CHAT_MESSAGE_OK, message)
                         .with_request_id(request_id)
-                        .with_origin(format!("{from}"))
+                        .with_origin(client.nick.clone())
                         .build();
+
+                    println!("{response:?}");
 
                     for (_, client) in clients.iter_mut() {
                         response.write_to(&client.conn)?;
                     }
+                }
+            }
+            Message::NickChanged { stream, nickname } => {
+                println!("iejfiwjefioewjiof");
+                let addr = &stream.clone().peer_addr().unwrap();
+                if let Some(client) = clients.get_mut(addr) {
+                    client.nick = nickname;
+                    let response = ResponseBuilder::new(RES_CHAT_MESSAGE_OK, "Done".to_owned())
+                        .with_origin(client.nick.clone())
+                        .build()
+                        .write_to(&client.conn)?;
                 }
             }
         }

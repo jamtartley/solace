@@ -268,7 +268,7 @@ impl Prompt {
                     .filter(|(i, _)| i < &self.pos)
                     .map(|(_, val)| *val)
                     .collect::<Vec<char>>();
-                self.pos = self.pos.clamp(0, self.curr.len() - 1);
+                self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
             }
             event::KeyCode::Char('x') => {
                 if !self.curr.is_empty() {

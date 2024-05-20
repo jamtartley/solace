@@ -62,7 +62,7 @@ impl ChatHistory {
         )]);
     }
 
-    pub(crate) fn message(&mut self, msg: &str, timestamp: &str, _origin: &str) {
+    pub(crate) fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
         fn parts_for_node(
             node: wangerz_message_parser::AstNode,
         ) -> Vec<(String, ChatHistoryPartStyle)> {
@@ -133,7 +133,7 @@ impl ChatHistory {
         entry.insert(
             0,
             (
-                format!(" {} ", timestamp),
+                format!(" {timestamp} "),
                 ChatHistoryPartStyle::new(
                     style::Color::Grey,
                     style::Color::DarkGrey,
@@ -143,6 +143,17 @@ impl ChatHistory {
         );
         entry.insert(
             1,
+            (
+                format!(" {origin:<16}"),
+                ChatHistoryPartStyle::new(
+                    style::Color::Cyan,
+                    style::Color::Reset,
+                    crate::CellStyle::Bold,
+                ),
+            ),
+        );
+        entry.insert(
+            2,
             (
                 " ".to_owned(),
                 ChatHistoryPartStyle::new(
