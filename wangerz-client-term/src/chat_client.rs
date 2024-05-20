@@ -131,7 +131,7 @@ impl ChatHistory {
             }
         }
 
-        let has_origin = origin.len() > 0;
+        let has_origin = !origin.is_empty();
         let parsed = wangerz_message_parser::parse(msg);
         let mut entry = parsed
             .nodes

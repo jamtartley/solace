@@ -7,12 +7,14 @@ use wangerz_protocol::response::ResponseBuilder;
 
 use crate::Message;
 
+type Execute = fn(&Arc<TcpStream>, &Sender<Message>, &Vec<AstNode>) -> anyhow::Result<()>;
+
 #[derive(Clone)]
 pub(crate) struct Command {
     name: &'static str,
     description: &'static str,
     usage: &'static str,
-    pub(crate) execute: fn(&Arc<TcpStream>, &Sender<Message>, &Vec<AstNode>) -> anyhow::Result<()>,
+    pub(crate) execute: Execute,
 }
 
 const COMMANDS: &[Command] = &[
@@ -55,7 +57,7 @@ const COMMANDS: &[Command] = &[
         description: "Set your nickname",
         usage: "/nick <nickname>",
         execute: |stream, messages, args| {
-            match &args.get(0) {
+            match &args.first() {
                 Some(AstNode::Text { value, .. }) => {
                     let trimmed = value.trim();
                     let nickname = trimmed[0..16.min(trimmed.len())].to_owned();

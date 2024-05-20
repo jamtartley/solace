@@ -19,7 +19,10 @@ use command::parse_command;
 use rand::Rng;
 use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
-    code::{ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_NICK_CHANGE, RES_WELCOME},
+    code::{
+        ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
+        RES_WELCOME,
+    },
     request::Request,
     response::ResponseBuilder,
 };
@@ -33,7 +36,6 @@ struct Client {
 impl Client {
     fn new(conn: Arc<TcpStream>, ip: SocketAddr) -> Self {
         let nick = Client::generate_random_nick();
-        println!("{nick:?}");
 
         Self { conn, ip, nick }
     }
@@ -42,8 +44,8 @@ impl Client {
         let len = 16;
         let mut bytes = vec![0; len];
 
-        for i in 0..len {
-            bytes[i] = rand::thread_rng().gen_range(48..123);
+        for byte in bytes.iter_mut().take(len) {
+            *byte = rand::thread_rng().gen_range(65..91);
         }
 
         String::from_utf8(bytes).unwrap()
@@ -109,7 +111,6 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
                             )
                             .build()
                             .write_to(&stream)?;
-                            println!("WEICMEOWIMC");
                         }
                     }
                     Some(_) => {
@@ -151,19 +152,42 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 let addr = author
                     .peer_addr()
                     .context("ERROR: Failed to get client socket address")?;
-                clients.insert(addr, Client::new(author.clone(), addr));
+                let client = Client::new(author.clone(), addr);
+                let nick = client.nick.clone();
+                clients.insert(addr, client);
 
                 // @FIXME: Forward request id
                 ResponseBuilder::new(RES_WELCOME, "Welcome to wangerz!".to_owned())
                     .build()
                     .write_to(&author)?;
 
+                for (_, other) in clients.iter_mut() {
+                    if other.ip != author.peer_addr().unwrap() {
+                        ResponseBuilder::new(RES_HELLO, format!("{} has joined the channel", nick))
+                            .build()
+                            .write_to(&other.conn)?;
+                    }
+                }
+
                 println!("INFO: Client {addr} connected");
             }
             Message::ClientDisconnected { addr } => {
-                clients.remove(&addr);
+                if let Some(left) = clients.remove(&addr) {
+                    let nick = left.nick.clone();
 
-                println!("INFO: Client {addr} disconnected");
+                    for (_, other) in clients.iter_mut() {
+                        if other.ip != left.ip {
+                            ResponseBuilder::new(
+                                RES_GOODBYE,
+                                format!("{} has left the channel", nick),
+                            )
+                            .build()
+                            .write_to(&other.conn)?;
+                        }
+                    }
+
+                    println!("INFO: Client {addr} disconnected");
+                }
             }
             Message::Sent {
                 from,
@@ -188,11 +212,11 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 let addr = &stream.clone().peer_addr().unwrap();
                 if let Some(client) = clients.get_mut(addr) {
                     let old_nickname = client.nick.clone();
-                    client.nick = nickname.clone();
+                    client.nick.clone_from(&nickname);
 
-                    let nick_notification_user = format!("You are now known as \"{}\"", nickname);
+                    let nick_notification_user = format!("You are now known as @{}", nickname);
                     let nick_notification_other =
-                        format!("{} is now known as \"{}\"", old_nickname, nickname);
+                        format!("@{} is now known as @{}", old_nickname, nickname);
 
                     for (_, client) in clients.iter_mut() {
                         let notification = if client.ip == stream.peer_addr().unwrap() {
