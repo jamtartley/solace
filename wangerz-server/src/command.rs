@@ -18,128 +18,141 @@ pub(crate) struct Command {
     pub(crate) execute: Execute,
 }
 
+fn ping(server: &mut Server, from: &SocketAddr, _ast: &Ast) -> anyhow::Result<()> {
+    if let Some(client) = server.clients.get(from) {
+        ResponseBuilder::new(RES_PONG, "pong".to_owned())
+            .build()
+            .write_to(&client.conn)?;
+    }
+
+    Ok(())
+}
+
+fn disconnect(server: &mut Server, from: &SocketAddr, _ast: &Ast) -> anyhow::Result<()> {
+    if let Some(client) = server.clients.get(from) {
+        ResponseBuilder::new(
+            RES_DISCONNECTED,
+            "You have disconnected from wangerz".to_owned(),
+        )
+        .build()
+        .write_to(&client.conn)?;
+
+        for (_, other) in server.clients.iter() {
+            ResponseBuilder::new(
+                RES_DISCONNECTED,
+                format!("{} has disconnected.", client.nick.clone()),
+            )
+            .build()
+            .write_to(&other.conn)?;
+        }
+    }
+    Ok(())
+}
+
+fn nick(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()> {
+    // @CLEANUP: Cloning client list
+    let all = server.clients.clone();
+
+    if let Some(client) = server.clients.get_mut(from) {
+        match ast.nodes.first() {
+            Some(AstNode::Command { args, .. }) => match args.first() {
+                Some(AstNode::Text { value, .. }) => {
+                    let trimmed = value.trim();
+                    let nickname = trimmed[0..16.min(trimmed.len())].to_owned();
+                    let old_nickname = client.nick.clone();
+
+                    client.nick.clone_from(&nickname);
+
+                    let nick_notification_user = format!("You are now known as @{}", nickname);
+                    let nick_notification_other =
+                        format!("@{} is now known as @{}", old_nickname, nickname);
+
+                    for (_, other) in all.iter() {
+                        let notification = if other.ip == client.ip {
+                            nick_notification_user.clone()
+                        } else {
+                            nick_notification_other.clone()
+                        };
+                        ResponseBuilder::new(RES_NICK_CHANGE, notification)
+                            .build()
+                            .write_to(&other.conn)?;
+                    }
+                }
+                _ => {
+                    ResponseBuilder::new(
+                        ERR_INVALID_ARGUMENT,
+                        "Usage: /nick <nickname>".to_owned(),
+                    )
+                    .build()
+                    .write_to(&client.conn)?;
+                }
+            },
+            _ => (),
+        }
+    }
+
+    Ok(())
+}
+
+fn topic(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()> {
+    if let Some(client) = server.clients.get(from) {
+        match ast.nodes.first() {
+            Some(AstNode::Command { args, .. }) => match args.first() {
+                Some(AstNode::Text { value, .. }) => {
+                    let new_topic = value.trim().to_owned();
+                    server.topic = new_topic.clone();
+
+                    for (_, other) in server.clients.iter() {
+                        ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
+                            .build()
+                            .write_to(&other.conn)?;
+                        ResponseBuilder::new(
+                            RES_TOPIC_CHANGE_MESSAGE,
+                            format!("Topic was changed to {}", server.topic.clone()),
+                        )
+                        .build()
+                        .write_to(&other.conn)?;
+                    }
+
+                    println!("INFO: Topic changed to {new_topic}");
+                }
+                _ => {
+                    ResponseBuilder::new(ERR_INVALID_ARGUMENT, "Usage: /topic <topic>".to_owned())
+                        .build()
+                        .write_to(&client.conn)?;
+                }
+            },
+            _ => (),
+        }
+    }
+
+    Ok(())
+}
+
 const COMMANDS: &[Command] = &[
     Command {
         name: "ping",
         description: "Ping the server",
         usage: "/ping",
-        execute: |server, from, _| {
-            if let Some(client) = server.clients.get(from) {
-                ResponseBuilder::new(RES_PONG, "pong".to_owned())
-                    .build()
-                    .write_to(&client.conn)?;
-            }
-
-            Ok(())
-        },
+        execute: ping,
     },
     Command {
         name: "disconnect",
         description: "Disconnect from the server",
         usage: "/disconnect",
-        execute: |server, from, _| {
-            if let Some(client) = server.clients.get(from) {
-                ResponseBuilder::new(
-                    RES_DISCONNECTED,
-                    "You have disconnected from wangerz".to_owned(),
-                )
-                .build()
-                .write_to(&client.conn)?;
-            }
-            Ok(())
-        },
+        execute: disconnect,
     },
     Command {
         name: "nick",
         description: "Set your nickname",
         usage: "/nick <nickname>",
-        execute: |server, from, ast| {
-            // @CLEANUP: Cloning client list
-            let all = server.clients.clone();
-
-            if let Some(client) = server.clients.get_mut(from) {
-                match ast.nodes.first() {
-                    Some(AstNode::Command { args, .. }) => match args.first() {
-                        Some(AstNode::Text { value, .. }) => {
-                            let trimmed = value.trim();
-                            let nickname = trimmed[0..16.min(trimmed.len())].to_owned();
-                            let old_nickname = client.nick.clone();
-
-                            client.nick.clone_from(&nickname);
-
-                            let nick_notification_user =
-                                format!("You are now known as @{}", nickname);
-                            let nick_notification_other =
-                                format!("@{} is now known as @{}", old_nickname, nickname);
-
-                            for (_, other) in all.iter() {
-                                let notification = if other.ip == client.ip {
-                                    nick_notification_user.clone()
-                                } else {
-                                    nick_notification_other.clone()
-                                };
-                                ResponseBuilder::new(RES_NICK_CHANGE, notification)
-                                    .build()
-                                    .write_to(&client.conn)?;
-                            }
-                        }
-                        _ => {
-                            ResponseBuilder::new(
-                                ERR_INVALID_ARGUMENT,
-                                "Usage: /nick <nickname>".to_owned(),
-                            )
-                            .build()
-                            .write_to(&client.conn)?;
-                        }
-                    },
-                    _ => (),
-                }
-            }
-
-            Ok(())
-        },
+        execute: nick,
     },
     Command {
         name: "topic",
         description: "Set the chat topic",
         usage: "/topic <topic>",
-        execute: |server, from, ast| {
-            if let Some(client) = server.clients.get(from) {
-                match ast.nodes.first() {
-                    Some(AstNode::Command { args, .. }) => match args.first() {
-                        Some(AstNode::Text { value, .. }) => {
-                            let new_topic = value.trim().to_owned();
-                            server.topic = new_topic.clone();
-
-                            for (_, client) in server.clients.iter() {
-                                ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
-                                    .build()
-                                    .write_to(&client.conn)?;
-                                ResponseBuilder::new(
-                                    RES_TOPIC_CHANGE_MESSAGE,
-                                    format!("Topic was changed to {}", server.topic.clone()),
-                                )
-                                .build()
-                                .write_to(&client.conn)?;
-                            }
-
-                            println!("INFO: Topic changed to {new_topic}");
-                        }
-                        _ => {
-                            ResponseBuilder::new(
-                                ERR_INVALID_ARGUMENT,
-                                "Usage: /topic <topic>".to_owned(),
-                            )
-                            .build()
-                            .write_to(&client.conn)?;
-                        }
-                    },
-                    _ => (),
-                }
-            }
-
-            Ok(())
-        },
+        execute: topic,
     },
 ];
 
