@@ -94,6 +94,7 @@ impl Lexer {
     }
 
     fn current(&self) -> char {
+        // @FIXME: Panics on multi-byte chars, should probably be using a string for content
         self.content[self.current_pos]
     }
 

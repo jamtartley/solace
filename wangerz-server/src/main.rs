@@ -36,8 +36,16 @@ impl Server {
     fn new() -> Self {
         Self {
             clients: HashMap::new(),
-            topic: "Hello, world!".to_owned(),
+            topic: String::default(),
         }
+    }
+
+    fn other_clients(&self, ip: SocketAddr) -> Vec<&Client> {
+        self.clients
+            .iter()
+            .filter(|(_, c)| c.ip != ip)
+            .map(|(_, c)| c)
+            .collect::<Vec<&Client>>()
     }
 }
 
@@ -113,38 +121,37 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
             Ok(n) => {
                 buf_message.extend_from_slice(&buf_tmp[..n]);
 
-                let req = Request::try_from(buf_message.clone())?;
-                let ast = wangerz_message_parser::parse(&req.message);
+                while let Ok(req) = Request::try_from(&mut buf_message) {
+                    let ast = wangerz_message_parser::parse(&req.message);
 
-                // @FEATURE: Handle pinging mentioned users
-                match ast.nodes.first() {
-                    Some(AstNode::Command { raw_name, args, .. }) => {
-                        if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
-                            (command.execute)(&stream, &messages, args)?
-                        } else {
-                            ResponseBuilder::new(
-                                ERR_COMMAND_NOT_FOUND,
-                                format!("Command {} not found", raw_name),
-                            )
-                            .build()
-                            .write_to(&stream)?;
+                    // @FEATURE: Handle pinging mentioned users
+                    match ast.nodes.first() {
+                        Some(AstNode::Command { raw_name, args, .. }) => {
+                            if let Ok(Some(command)) = parse_command(&ast.nodes[0]) {
+                                (command.execute)(&stream, &messages, args)?
+                            } else {
+                                ResponseBuilder::new(
+                                    ERR_COMMAND_NOT_FOUND,
+                                    format!("Command {} not found", raw_name),
+                                )
+                                .build()
+                                .write_to(&stream)?;
+                            }
+                        }
+                        Some(_) => {
+                            messages
+                                .send(Message::Sent {
+                                    from: addr,
+                                    message: req.message.to_owned(),
+                                    request_id: req.id,
+                                })
+                                .context("ERROR: Could not send message")?;
+                        }
+                        None => {
+                            eprintln!("ERROR: Received empty message or parsing failed");
                         }
                     }
-                    Some(_) => {
-                        messages
-                            .send(Message::Sent {
-                                from: addr,
-                                message: req.message.to_owned(),
-                                request_id: req.id,
-                            })
-                            .context("ERROR: Could not send message")?;
-                    }
-                    None => {
-                        eprintln!("ERROR: Received empty message or parsing failed");
-                    }
                 }
-
-                buf_message.clear();
             }
             Err(_) => {
                 messages
@@ -171,19 +178,21 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     .context("ERROR: Failed to get client socket address")?;
                 let client = Client::new(author.clone(), addr);
                 let nick = client.nick.clone();
+                let client_ip = client.ip;
                 server.clients.insert(addr, client);
 
                 // @FIXME: Forward request id
+                ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
+                    .build()
+                    .write_to(&author)?;
                 ResponseBuilder::new(RES_WELCOME, "Welcome to wangerz!".to_owned())
                     .build()
                     .write_to(&author)?;
 
-                for (_, other) in server.clients.iter_mut() {
-                    if other.ip != author.peer_addr().unwrap() {
-                        ResponseBuilder::new(RES_HELLO, format!("{} has joined the channel", nick))
-                            .build()
-                            .write_to(&other.conn)?;
-                    }
+                for other in server.other_clients(client_ip) {
+                    ResponseBuilder::new(RES_HELLO, format!("{} has joined the channel", nick))
+                        .build()
+                        .write_to(&other.conn)?;
                 }
 
                 println!("INFO: Client {addr} connected");
@@ -192,15 +201,10 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 if let Some(left) = server.clients.remove(&addr) {
                     let nick = left.nick.clone();
 
-                    for (_, other) in server.clients.iter_mut() {
-                        if other.ip != left.ip {
-                            ResponseBuilder::new(
-                                RES_GOODBYE,
-                                format!("{} has left the channel", nick),
-                            )
+                    for other in server.other_clients(left.ip) {
+                        ResponseBuilder::new(RES_GOODBYE, format!("{} has left the channel", nick))
                             .build()
                             .write_to(&other.conn)?;
-                        }
                     }
 
                     println!("INFO: Client {addr} disconnected");

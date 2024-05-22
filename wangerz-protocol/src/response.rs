@@ -60,10 +60,11 @@ impl TryFrom<&mut Vec<u8>> for Response {
 
     fn try_from(buf: &mut Vec<u8>) -> Result<Self, anyhow::Error> {
         if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
-            let parseable = buf.drain(..pos + 2).collect::<Vec<u8>>();
+            let parseable = buf.drain(..pos).collect::<Vec<u8>>();
+            buf.drain(0..2); // pop out the \r\n
 
             if parseable.len() < 13 {
-                return Err(anyhow::anyhow!("Invalid response: too short"));
+                return Err(anyhow::anyhow!("ERROR: Response is too short"));
             }
 
             let version = parseable[0];
@@ -97,7 +98,7 @@ impl TryFrom<&mut Vec<u8>> for Response {
             });
         }
 
-        Err(anyhow::anyhow!("Invalid response"))
+        Err(anyhow::anyhow!("ERROR: Invalid response"))
     }
 }
 

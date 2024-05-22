@@ -44,17 +44,13 @@ impl Request {
     }
 }
 
-impl TryFrom<Vec<u8>> for Request {
+impl TryFrom<&mut Vec<u8>> for Request {
     type Error = anyhow::Error;
 
-    fn try_from(mut buf: Vec<u8>) -> Result<Self, anyhow::Error> {
+    fn try_from(buf: &mut Vec<u8>) -> Result<Self, anyhow::Error> {
         if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
             let parseable = buf.drain(..pos).collect::<Vec<u8>>();
-
-            if parseable.is_empty() {
-                // @FIXME: What should happen with empty request?
-                return Ok(Request::default());
-            }
+            buf.drain(0..2); // pop out the \r\n
 
             if parseable.len() < 5 {
                 return Err(anyhow::anyhow!("ERROR: Request is too short"));
@@ -71,6 +67,6 @@ impl TryFrom<Vec<u8>> for Request {
             });
         }
 
-        Err(anyhow::anyhow!("ERROR: Request is invalid"))
+        Err(anyhow::anyhow!("ERROR: Invalid reqeust"))
     }
 }
