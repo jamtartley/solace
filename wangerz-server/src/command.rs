@@ -1,13 +1,14 @@
-use anyhow::Context;
-use std::sync::mpsc::Sender;
-use std::{net::TcpStream, sync::Arc};
-use wangerz_message_parser::AstNode;
-use wangerz_protocol::code::{ERR_INVALID_ARGUMENT, RES_DISCONNECTED, RES_PONG};
+use std::net::SocketAddr;
+use wangerz_message_parser::{Ast, AstNode};
+use wangerz_protocol::code::{
+    ERR_INVALID_ARGUMENT, RES_DISCONNECTED, RES_NICK_CHANGE, RES_PONG, RES_TOPIC_CHANGE,
+    RES_TOPIC_CHANGE_MESSAGE,
+};
 use wangerz_protocol::response::ResponseBuilder;
 
-use crate::Message;
+use crate::Server;
 
-type Execute = fn(&Arc<TcpStream>, &Sender<Message>, &Vec<AstNode>) -> anyhow::Result<()>;
+type Execute = fn(&mut Server, &SocketAddr, &Ast) -> anyhow::Result<()>;
 
 #[derive(Clone)]
 pub(crate) struct Command {
@@ -22,10 +23,12 @@ const COMMANDS: &[Command] = &[
         name: "ping",
         description: "Ping the server",
         usage: "/ping",
-        execute: |stream, _, _| {
-            ResponseBuilder::new(RES_PONG, "pong".to_owned())
-                .build()
-                .write_to(stream)?;
+        execute: |server, from, _| {
+            if let Some(client) = server.clients.get(from) {
+                ResponseBuilder::new(RES_PONG, "pong".to_owned())
+                    .build()
+                    .write_to(&client.conn)?;
+            }
 
             Ok(())
         },
@@ -34,21 +37,15 @@ const COMMANDS: &[Command] = &[
         name: "disconnect",
         description: "Disconnect from the server",
         usage: "/disconnect",
-        execute: |stream, messages, _| {
-            let addr = stream
-                .peer_addr()
-                .context("ERROR: Failed to get client socket address")?;
-
-            ResponseBuilder::new(
-                RES_DISCONNECTED,
-                "You have disconnected from wangerz".to_owned(),
-            )
-            .build()
-            .write_to(stream)?;
-
-            messages
-                .send(Message::ClientDisconnected { addr })
-                .context("ERROR: Could not send disconnected message to client: {addr}")?;
+        execute: |server, from, _| {
+            if let Some(client) = server.clients.get(from) {
+                ResponseBuilder::new(
+                    RES_DISCONNECTED,
+                    "You have disconnected from wangerz".to_owned(),
+                )
+                .build()
+                .write_to(&client.conn)?;
+            }
             Ok(())
         },
     },
@@ -56,26 +53,46 @@ const COMMANDS: &[Command] = &[
         name: "nick",
         description: "Set your nickname",
         usage: "/nick <nickname>",
-        execute: |stream, messages, args| {
-            match &args.first() {
-                Some(AstNode::Text { value, .. }) => {
-                    let trimmed = value.trim();
-                    let nickname = trimmed[0..16.min(trimmed.len())].to_owned();
+        execute: |server, from, ast| {
+            // @CLEANUP: Cloning client list
+            let all = server.clients.clone();
 
-                    messages
-                        .send(Message::NickChanged {
-                            stream: stream.clone(),
-                            nickname,
-                        })
-                        .context("ERROR: Could not send nickname message to client")?;
-                }
-                _ => {
-                    ResponseBuilder::new(
-                        ERR_INVALID_ARGUMENT,
-                        "Usage: /nick <nickname>".to_owned(),
-                    )
-                    .build()
-                    .write_to(stream)?;
+            if let Some(client) = server.clients.get_mut(from) {
+                match ast.nodes.first() {
+                    Some(AstNode::Command { args, .. }) => match args.first() {
+                        Some(AstNode::Text { value, .. }) => {
+                            let trimmed = value.trim();
+                            let nickname = trimmed[0..16.min(trimmed.len())].to_owned();
+                            let old_nickname = client.nick.clone();
+
+                            client.nick.clone_from(&nickname);
+
+                            let nick_notification_user =
+                                format!("You are now known as @{}", nickname);
+                            let nick_notification_other =
+                                format!("@{} is now known as @{}", old_nickname, nickname);
+
+                            for (_, other) in all.iter() {
+                                let notification = if other.ip == client.ip {
+                                    nick_notification_user.clone()
+                                } else {
+                                    nick_notification_other.clone()
+                                };
+                                ResponseBuilder::new(RES_NICK_CHANGE, notification)
+                                    .build()
+                                    .write_to(&client.conn)?;
+                            }
+                        }
+                        _ => {
+                            ResponseBuilder::new(
+                                ERR_INVALID_ARGUMENT,
+                                "Usage: /nick <nickname>".to_owned(),
+                            )
+                            .build()
+                            .write_to(&client.conn)?;
+                        }
+                    },
+                    _ => (),
                 }
             }
 
@@ -86,22 +103,38 @@ const COMMANDS: &[Command] = &[
         name: "topic",
         description: "Set the chat topic",
         usage: "/topic <topic>",
-        execute: |stream, messages, args| {
-            match &args.first() {
-                Some(AstNode::Text { value, .. }) => {
-                    let new_topic = value.trim().to_owned();
+        execute: |server, from, ast| {
+            if let Some(client) = server.clients.get(from) {
+                match ast.nodes.first() {
+                    Some(AstNode::Command { args, .. }) => match args.first() {
+                        Some(AstNode::Text { value, .. }) => {
+                            let new_topic = value.trim().to_owned();
+                            server.topic = new_topic.clone();
 
-                    messages
-                        .send(Message::TopicChanged {
-                            new_topic: new_topic.clone(),
-                        })
-                        .context("ERROR: Could not send new topic message to client")?;
-                    println!("INFO: Topic changed to {new_topic}");
-                }
-                _ => {
-                    ResponseBuilder::new(ERR_INVALID_ARGUMENT, "Usage: /topic <topic>".to_owned())
-                        .build()
-                        .write_to(stream)?;
+                            for (_, client) in server.clients.iter() {
+                                ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
+                                    .build()
+                                    .write_to(&client.conn)?;
+                                ResponseBuilder::new(
+                                    RES_TOPIC_CHANGE_MESSAGE,
+                                    format!("Topic was changed to {}", server.topic.clone()),
+                                )
+                                .build()
+                                .write_to(&client.conn)?;
+                            }
+
+                            println!("INFO: Topic changed to {new_topic}");
+                        }
+                        _ => {
+                            ResponseBuilder::new(
+                                ERR_INVALID_ARGUMENT,
+                                "Usage: /topic <topic>".to_owned(),
+                            )
+                            .build()
+                            .write_to(&client.conn)?;
+                        }
+                    },
+                    _ => (),
                 }
             }
 
