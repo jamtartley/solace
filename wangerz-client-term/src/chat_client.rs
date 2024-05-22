@@ -1,7 +1,6 @@
 use std::{
     io::{ErrorKind, Read},
     net::TcpStream,
-    ops::Deref,
 };
 
 use crossterm::style;
@@ -231,31 +230,32 @@ impl ChatClient {
             match tcp_stream.read(&mut buf_tmp) {
                 Ok(n) if n > 0 => {
                     self.buf_message.extend_from_slice(&buf_tmp[..n]);
-                    let Response {
-                        message,
-                        origin,
-                        timestamp,
-                        code,
-                        ..
-                    } = Response::try_from(self.buf_message.clone())?;
-                    let timestamp = self.to_local_time(timestamp);
 
-                    self.buf_message.clear();
+                    while let Ok(res) = Response::try_from(&mut self.buf_message) {
+                        let Response {
+                            message,
+                            origin,
+                            timestamp,
+                            code,
+                            ..
+                        } = res;
+                        let timestamp = self.to_local_time(timestamp);
 
-                    match code {
-                        RES_TOPIC_CHANGE => {
-                            self.topic = message;
+                        match code {
+                            RES_TOPIC_CHANGE => {
+                                self.topic = message;
+                            }
+                            _ => self.history.message(&message, &timestamp, &origin),
                         }
-                        _ => self.history.message(&message, &timestamp, &origin),
                     }
                 }
                 Ok(0) => {
                     self.stream = None;
-                    self.history.error("Get out of it");
+                    self.history.error("Server closed the connection");
                 }
                 Err(e) if e.kind() != ErrorKind::WouldBlock => {
                     self.stream = None;
-                    self.history.error("Get out of it");
+                    self.history.error("Server closed the connection");
                 }
                 _ => {}
             }

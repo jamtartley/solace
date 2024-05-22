@@ -432,7 +432,7 @@ fn main() -> anyhow::Result<()> {
         for i in 0..size.0 {
             if let Some(ch) = chat_client.topic.chars().nth(i.into()) {
                 buf_curr.put_at(
-                    i as u16,
+                    i,
                     0,
                     ch,
                     style::Color::Black,
@@ -441,7 +441,7 @@ fn main() -> anyhow::Result<()> {
                 );
             } else {
                 buf_curr.put_at(
-                    i as u16,
+                    i,
                     0,
                     ' ',
                     style::Color::Black,
