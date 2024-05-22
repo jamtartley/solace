@@ -20,8 +20,8 @@ use rand::Rng;
 use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
     code::{
-        ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
-        RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME,
+        ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE,
+        RES_WELCOME,
     },
     request::Request,
     response::ResponseBuilder,

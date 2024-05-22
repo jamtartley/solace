@@ -253,7 +253,7 @@ impl Prompt {
 
     fn handle_normal(&mut self, key_code: event::KeyCode) {
         match key_code {
-            event::KeyCode::Char(ch) if self.command_buffer.get(0) == Some(&'F') => {
+            event::KeyCode::Char(ch) if self.command_buffer.first() == Some(&'F') => {
                 if let Some(found_at) = self.find_previous_index(|c| c == ch) {
                     self.pos = found_at;
                 }
@@ -288,15 +288,12 @@ impl Prompt {
                 self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
             }
             event::KeyCode::Char('F') => self.command_buffer.push('F'),
-            event::KeyCode::Char('d') => match self.command_buffer.get(0) {
-                Some(ch) => match ch {
-                    'd' => {
-                        self.clear();
-                        self.command_buffer.clear();
-                    }
-                    _ => (),
-                },
-                None => self.command_buffer.push('d'),
+            event::KeyCode::Char('d') => match self.command_buffer.first() {
+                Some(ch) if ch == &'d' => {
+                    self.clear();
+                    self.command_buffer.clear();
+                }
+                _ => self.command_buffer.push('d'),
             },
             event::KeyCode::Char('x') => {
                 if !self.curr.is_empty() {
@@ -486,25 +483,18 @@ fn main() -> anyhow::Result<()> {
         chat_client.read()?;
 
         for i in 0..size.0 {
-            if let Some(ch) = chat_client.topic.chars().nth(i.into()) {
-                buf_curr.put_at(
-                    i,
-                    0,
-                    ch,
-                    style::Color::Black,
-                    style::Color::Cyan,
-                    CellStyle::Italic,
-                );
-            } else {
-                buf_curr.put_at(
-                    i,
-                    0,
-                    ' ',
-                    style::Color::Black,
-                    style::Color::Cyan,
-                    CellStyle::Italic,
-                );
-            }
+            buf_curr.put_at(
+                i,
+                0,
+                if let Some(ch) = chat_client.topic.chars().nth(i.into()) {
+                    ch
+                } else {
+                    ' '
+                },
+                style::Color::Black,
+                style::Color::Yellow,
+                CellStyle::Bold,
+            );
         }
 
         chat_client.history.render_into(

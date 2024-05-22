@@ -54,8 +54,8 @@ fn nick(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()>
     let all = server.clients.clone();
 
     if let Some(client) = server.clients.get_mut(from) {
-        match ast.nodes.first() {
-            Some(AstNode::Command { args, .. }) => match args.first() {
+        if let Some(AstNode::Command { args, .. }) = ast.nodes.first() {
+            match args.first() {
                 Some(AstNode::Text { value, .. }) => {
                     let trimmed = value.trim();
                     let nickname = trimmed[0..16.min(trimmed.len())].to_owned();
@@ -86,8 +86,7 @@ fn nick(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()>
                     .build()
                     .write_to(&client.conn)?;
                 }
-            },
-            _ => (),
+            }
         }
     }
 
@@ -96,11 +95,11 @@ fn nick(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()>
 
 fn topic(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()> {
     if let Some(client) = server.clients.get(from) {
-        match ast.nodes.first() {
-            Some(AstNode::Command { args, .. }) => match args.first() {
+        if let Some(AstNode::Command { args, .. }) = ast.nodes.first() {
+            match args.first() {
                 Some(AstNode::Text { value, .. }) => {
                     let new_topic = value.trim().to_owned();
-                    server.topic = new_topic.clone();
+                    server.topic.clone_from(&new_topic);
 
                     for (_, other) in server.clients.iter() {
                         ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
@@ -121,8 +120,7 @@ fn topic(server: &mut Server, from: &SocketAddr, ast: &Ast) -> anyhow::Result<()
                         .build()
                         .write_to(&client.conn)?;
                 }
-            },
-            _ => (),
+            }
         }
     }
 
