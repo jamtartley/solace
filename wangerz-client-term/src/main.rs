@@ -193,6 +193,7 @@ enum Mode {
 
 #[derive(Debug)]
 struct Prompt {
+    command_buffer: Vec<char>,
     curr: Vec<char>,
     history: Vec<String>,
     history_offset: usize,
@@ -203,6 +204,7 @@ struct Prompt {
 impl Prompt {
     fn new() -> Self {
         Self {
+            command_buffer: vec![],
             curr: vec![],
             history: vec![],
             history_offset: 0,
@@ -234,7 +236,7 @@ impl Prompt {
         match key_code {
             event::KeyCode::Char(ch) => self.insert(ch),
             event::KeyCode::Esc => {
-                self.mode = Mode::Normal;
+                self.switch_to_mode(Mode::Normal);
                 self.pos = self.pos.saturating_sub(1);
             }
             event::KeyCode::Backspace => self.remove(),
@@ -244,25 +246,30 @@ impl Prompt {
         }
     }
 
+    fn switch_to_mode(&mut self, new_mode: Mode) {
+        self.mode = new_mode;
+        self.command_buffer.clear();
+    }
+
     fn handle_normal(&mut self, key_code: event::KeyCode) {
         match key_code {
-            event::KeyCode::Char('i') => self.mode = Mode::Insert,
+            event::KeyCode::Char('i') => self.switch_to_mode(Mode::Insert),
             event::KeyCode::Char('h') => self.pos = self.pos.saturating_sub(1),
             event::KeyCode::Char('l') => {
                 self.pos = (self.pos + 1).clamp(0, self.curr.len().saturating_sub(1))
             }
             event::KeyCode::Char('I') => {
-                self.mode = Mode::Insert;
+                self.switch_to_mode(Mode::Insert);
                 self.pos = 0;
             }
             event::KeyCode::Char('a') => {
-                self.mode = Mode::Insert;
+                self.switch_to_mode(Mode::Insert);
                 if self.pos < self.curr.len() {
                     self.pos += 1;
                 }
             }
             event::KeyCode::Char('A') => {
-                self.mode = Mode::Insert;
+                self.switch_to_mode(Mode::Insert);
                 self.pos = self.curr.len();
             }
             event::KeyCode::Char('D') => {
@@ -275,6 +282,16 @@ impl Prompt {
                     .collect::<Vec<char>>();
                 self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
             }
+            event::KeyCode::Char('d') => match self.command_buffer.get(0) {
+                Some(ch) => match ch {
+                    'd' => {
+                        self.clear();
+                        self.command_buffer.clear();
+                    }
+                    _ => (),
+                },
+                None => self.command_buffer.push('d'),
+            },
             event::KeyCode::Char('x') => {
                 if !self.curr.is_empty() {
                     self.curr.remove(self.pos);
@@ -286,6 +303,7 @@ impl Prompt {
             event::KeyCode::Char('$') => self.pos = self.curr.len(),
             event::KeyCode::Up => self.fetch_previous(),
             event::KeyCode::Down => self.fetch_next(),
+            event::KeyCode::Esc => self.command_buffer.clear(),
             _ => (),
         }
     }
@@ -293,7 +311,7 @@ impl Prompt {
     fn clear(&mut self) {
         self.curr.clear();
         self.pos = 0;
-        self.mode = Mode::Insert;
+        self.switch_to_mode(Mode::Insert);
     }
 
     fn flush(&mut self) {
