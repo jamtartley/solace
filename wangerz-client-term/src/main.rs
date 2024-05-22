@@ -253,6 +253,13 @@ impl Prompt {
 
     fn handle_normal(&mut self, key_code: event::KeyCode) {
         match key_code {
+            event::KeyCode::Char(ch) if self.command_buffer.get(0) == Some(&'F') => {
+                if let Some(found_at) = self.find_previous_index(|c| c == ch) {
+                    self.pos = found_at;
+                }
+
+                self.command_buffer.clear();
+            }
             event::KeyCode::Char('i') => self.switch_to_mode(Mode::Insert),
             event::KeyCode::Char('h') => self.pos = self.pos.saturating_sub(1),
             event::KeyCode::Char('l') => {
@@ -272,16 +279,15 @@ impl Prompt {
                 self.switch_to_mode(Mode::Insert);
                 self.pos = self.curr.len();
             }
+            event::KeyCode::Char('C') => {
+                self.delete_until_end();
+                self.switch_to_mode(Mode::Insert);
+            }
             event::KeyCode::Char('D') => {
-                self.curr = self
-                    .curr
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| i < &self.pos)
-                    .map(|(_, val)| *val)
-                    .collect::<Vec<char>>();
+                self.delete_until_end();
                 self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
             }
+            event::KeyCode::Char('F') => self.command_buffer.push('F'),
             event::KeyCode::Char('d') => match self.command_buffer.get(0) {
                 Some(ch) => match ch {
                     'd' => {
@@ -346,6 +352,38 @@ impl Prompt {
             self.curr = entry.chars().collect();
             self.pos = self.curr.len();
         }
+    }
+
+    fn delete_until_end(&mut self) {
+        self.curr = self
+            .curr
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i < &self.pos)
+            .map(|(_, val)| *val)
+            .collect::<Vec<char>>();
+    }
+
+    fn find_previous_index<F>(&self, predicate: F) -> Option<usize>
+    where
+        F: Fn(char) -> bool,
+    {
+        if self.pos == 0 {
+            return None;
+        }
+
+        let mut pos = self.pos - 1;
+        while pos > 0 {
+            if let Some(ch) = self.curr.get(pos) {
+                if predicate(*ch) {
+                    return Some(pos);
+                }
+            }
+
+            pos -= 1;
+        }
+
+        None
     }
 }
 
