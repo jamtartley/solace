@@ -82,6 +82,32 @@ const COMMANDS: &[Command] = &[
             Ok(())
         },
     },
+    Command {
+        name: "topic",
+        description: "Set the chat topic",
+        usage: "/topic <topic>",
+        execute: |stream, messages, args| {
+            match &args.first() {
+                Some(AstNode::Text { value, .. }) => {
+                    let new_topic = value.trim().to_owned();
+
+                    messages
+                        .send(Message::TopicChanged {
+                            new_topic: new_topic.clone(),
+                        })
+                        .context("ERROR: Could not send new topic message to client")?;
+                    println!("INFO: Topic changed to {new_topic}");
+                }
+                _ => {
+                    ResponseBuilder::new(ERR_INVALID_ARGUMENT, "Usage: /topic <topic>".to_owned())
+                        .build()
+                        .write_to(stream)?;
+                }
+            }
+
+            Ok(())
+        },
+    },
 ];
 
 pub(crate) fn parse_command(

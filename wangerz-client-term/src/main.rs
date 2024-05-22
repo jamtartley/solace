@@ -411,13 +411,36 @@ fn main() -> anyhow::Result<()> {
         buf_curr.clear();
 
         chat_client.read()?;
+
+        for i in 0..size.0 {
+            if let Some(ch) = chat_client.topic.chars().nth(i.into()) {
+                buf_curr.put_at(
+                    i as u16,
+                    0,
+                    ch,
+                    style::Color::Black,
+                    style::Color::Cyan,
+                    CellStyle::Italic,
+                );
+            } else {
+                buf_curr.put_at(
+                    i as u16,
+                    0,
+                    ' ',
+                    style::Color::Black,
+                    style::Color::Cyan,
+                    CellStyle::Italic,
+                );
+            }
+        }
+
         chat_client.history.render_into(
             &mut buf_curr,
             &Rect {
                 x: 0,
-                y: 0,
+                y: 1,
                 width: size.0,
-                height: size.1.saturating_sub(2),
+                height: size.1.saturating_sub(3),
             },
         );
 

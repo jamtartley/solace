@@ -1,10 +1,11 @@
 use std::{
     io::{ErrorKind, Read},
     net::TcpStream,
+    ops::Deref,
 };
 
 use crossterm::style;
-use wangerz_protocol::{request::Request, response::Response};
+use wangerz_protocol::{code::RES_TOPIC_CHANGE, request::Request, response::Response};
 
 use crate::Renderable;
 
@@ -193,6 +194,7 @@ pub(crate) struct ChatClient {
     pub(crate) history: ChatHistory,
     pub(crate) should_quit: bool,
     pub(crate) stream: Option<TcpStream>,
+    pub(crate) topic: String,
     buf_message: Vec<u8>,
 }
 
@@ -210,6 +212,7 @@ impl ChatClient {
             history: ChatHistory::new(),
             should_quit: false,
             stream,
+            topic: "Ji".to_owned(),
         }
     }
 
@@ -232,13 +235,18 @@ impl ChatClient {
                         message,
                         origin,
                         timestamp,
+                        code,
                         ..
                     } = Response::try_from(self.buf_message.clone())?;
                     let timestamp = self.to_local_time(timestamp);
 
-                    if !message.is_empty() {
-                        self.history.message(&message, &timestamp, &origin);
-                        self.buf_message.clear();
+                    self.buf_message.clear();
+
+                    match code {
+                        RES_TOPIC_CHANGE => {
+                            self.topic = message;
+                        }
+                        _ => self.history.message(&message, &timestamp, &origin),
                     }
                 }
                 Ok(0) => {

@@ -21,11 +21,25 @@ use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
     code::{
         ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
-        RES_WELCOME,
+        RES_TOPIC_CHANGE, RES_WELCOME,
     },
     request::Request,
     response::ResponseBuilder,
 };
+
+struct Server {
+    clients: HashMap<SocketAddr, Client>,
+    topic: String,
+}
+
+impl Server {
+    fn new() -> Self {
+        Self {
+            clients: HashMap::new(),
+            topic: "Hello, world!".to_owned(),
+        }
+    }
+}
 
 struct Client {
     conn: Arc<TcpStream>,
@@ -68,6 +82,9 @@ pub(crate) enum Message {
     NickChanged {
         stream: Arc<TcpStream>,
         nickname: String,
+    },
+    TopicChanged {
+        new_topic: String,
     },
 }
 
@@ -142,7 +159,7 @@ fn client_worker(stream: Arc<TcpStream>, messages: Sender<Message>) -> anyhow::R
 }
 
 fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
-    let mut clients = HashMap::<SocketAddr, Client>::new();
+    let mut server = Server::new();
 
     loop {
         let message = messages.recv().expect("Socket has not hung up");
@@ -154,14 +171,14 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     .context("ERROR: Failed to get client socket address")?;
                 let client = Client::new(author.clone(), addr);
                 let nick = client.nick.clone();
-                clients.insert(addr, client);
+                server.clients.insert(addr, client);
 
                 // @FIXME: Forward request id
                 ResponseBuilder::new(RES_WELCOME, "Welcome to wangerz!".to_owned())
                     .build()
                     .write_to(&author)?;
 
-                for (_, other) in clients.iter_mut() {
+                for (_, other) in server.clients.iter_mut() {
                     if other.ip != author.peer_addr().unwrap() {
                         ResponseBuilder::new(RES_HELLO, format!("{} has joined the channel", nick))
                             .build()
@@ -172,10 +189,10 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 println!("INFO: Client {addr} connected");
             }
             Message::ClientDisconnected { addr } => {
-                if let Some(left) = clients.remove(&addr) {
+                if let Some(left) = server.clients.remove(&addr) {
                     let nick = left.nick.clone();
 
-                    for (_, other) in clients.iter_mut() {
+                    for (_, other) in server.clients.iter_mut() {
                         if other.ip != left.ip {
                             ResponseBuilder::new(
                                 RES_GOODBYE,
@@ -194,7 +211,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                 message,
                 request_id,
             } => {
-                if let Some(client) = clients.get(&from) {
+                if let Some(client) = server.clients.get(&from) {
                     println!("INFO: Client {from} sent message: {message:?}");
 
                     // @FIXME: Forward request id
@@ -203,14 +220,14 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                         .with_origin(client.nick.clone())
                         .build();
 
-                    for (_, client) in clients.iter_mut() {
+                    for (_, client) in server.clients.iter() {
                         response.write_to(&client.conn)?;
                     }
                 }
             }
             Message::NickChanged { stream, nickname } => {
                 let addr = &stream.clone().peer_addr().unwrap();
-                if let Some(client) = clients.get_mut(addr) {
+                if let Some(client) = server.clients.get_mut(addr) {
                     let old_nickname = client.nick.clone();
                     client.nick.clone_from(&nickname);
 
@@ -218,7 +235,7 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                     let nick_notification_other =
                         format!("@{} is now known as @{}", old_nickname, nickname);
 
-                    for (_, client) in clients.iter_mut() {
+                    for (_, client) in server.clients.iter() {
                         let notification = if client.ip == stream.peer_addr().unwrap() {
                             nick_notification_user.clone()
                         } else {
@@ -228,6 +245,15 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                             .build()
                             .write_to(&client.conn)?;
                     }
+                }
+            }
+            Message::TopicChanged { new_topic } => {
+                server.topic = new_topic.clone();
+
+                for (_, client) in server.clients.iter() {
+                    ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
+                        .build()
+                        .write_to(&client.conn)?;
                 }
             }
         }
