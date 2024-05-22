@@ -11,10 +11,13 @@ use crossterm::{
     style::{self, Stylize},
     terminal, QueueableCommand,
 };
+use logger::Logger;
+use once_cell::sync::OnceCell;
 
 use crate::chat_client::ChatClient;
 
 mod chat_client;
+mod logger;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum CellStyle {
@@ -359,6 +362,20 @@ impl Drop for Screen {
         terminal::disable_raw_mode().unwrap();
         crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
     }
+}
+
+static LOGGER: OnceCell<Option<Logger>> = OnceCell::new();
+
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {
+        {
+            let log_message = format!($($arg)*);
+            if let Some(logger) = $crate::LOGGER.get_or_init(|| Some($crate::Logger::new("/tmp/wangerz.log"))) {
+                logger.log(&log_message);
+            }
+        }
+    };
 }
 
 fn main() -> anyhow::Result<()> {

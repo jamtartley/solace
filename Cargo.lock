@@ -342,6 +342,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "crossterm",
+ "once_cell",
  "wangerz-message-parser",
  "wangerz-protocol",
 ]
