@@ -256,62 +256,31 @@ fn main() -> anyhow::Result<()> {
         buf_curr.clear();
 
         chat_client.read()?;
-
-        for i in 0..size.0 {
-            buf_curr.put_at(
-                i,
-                0,
-                if let Some(ch) = chat_client.topic.chars().nth(i.into()) {
-                    ch
-                } else {
-                    ' '
-                },
-                style::Color::Black,
-                style::Color::Yellow,
-                CellStyle::Bold,
-            );
-        }
-
-        chat_client.history.render_into(
+        chat_client.render_into(
             &mut buf_curr,
             &Rect {
                 x: 0,
-                y: 1,
+                y: 0,
                 width: size.0,
                 height: size.1.saturating_sub(3),
             },
         );
 
-        if let Some(prompt_start_row) = size.1.checked_sub(2) {
-            for i in 0..size.0 {
-                buf_curr.put_at(
-                    i,
-                    prompt_start_row,
-                    '━',
-                    style::Color::White,
-                    style::Color::Reset,
-                    CellStyle::Normal,
-                );
-            }
+        prompt.render_into(
+            &mut buf_curr,
+            &Rect {
+                x: 0,
+                y: size.1.saturating_sub(2),
+                width: size.0,
+                height: 2,
+            },
+        );
 
-            prompt.render_into(
-                &mut buf_curr,
-                &Rect {
-                    x: 0,
-                    y: prompt_start_row + 1,
-                    width: size.0,
-                    height: size.1,
-                },
-            );
-        }
-
-        let diff = buf_prev.diff(&buf_curr);
-
-        for patch in &diff {
+        for patch in &buf_prev.diff(&buf_curr) {
             patch.render_to(&mut stdout)?;
         }
 
-        // @CLEANUP: assumption of prompt y pos
+        // @CLEANUP: assumption that prompt is in the last row
         prompt.align_cursor(&mut stdout, size.1)?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);

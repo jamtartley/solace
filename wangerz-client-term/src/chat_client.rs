@@ -6,7 +6,7 @@ use std::{
 use crossterm::style;
 use wangerz_protocol::{code::RES_TOPIC_CHANGE, request::Request, response::Response};
 
-use crate::{color::hex_to_rgb, Renderable};
+use crate::{color::hex_to_rgb, CellStyle, Rect, Renderable};
 
 #[derive(Debug)]
 struct ChatHistoryPartStyle {
@@ -188,13 +188,42 @@ impl ChatHistory {
     }
 }
 
+#[derive(Debug, Default)]
+struct ChatTopic(String);
+
+impl Renderable for ChatTopic {
+    fn render_into(&self, buf: &mut crate::RenderBuffer, rect: &Rect) {
+        for i in 0..rect.width {
+            if let Some(ch) = self.0.chars().nth(i.into()) {
+                buf.put_at(
+                    i,
+                    0,
+                    ch,
+                    style::Color::Black,
+                    style::Color::Cyan,
+                    CellStyle::Italic,
+                );
+            } else {
+                buf.put_at(
+                    i,
+                    0,
+                    ' ',
+                    style::Color::Black,
+                    style::Color::Cyan,
+                    CellStyle::Italic,
+                );
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ChatClient {
     buf_message: Vec<u8>,
-    pub(crate) history: ChatHistory,
+    stream: Option<TcpStream>,
+    topic: ChatTopic,
+    history: ChatHistory,
     pub(crate) should_quit: bool,
-    pub(crate) stream: Option<TcpStream>,
-    pub(crate) topic: String,
 }
 
 impl ChatClient {
@@ -211,7 +240,7 @@ impl ChatClient {
             history: ChatHistory::new(),
             should_quit: false,
             stream,
-            topic: String::new(),
+            topic: ChatTopic::default(),
         }
     }
 
@@ -243,7 +272,7 @@ impl ChatClient {
 
                         match code {
                             RES_TOPIC_CHANGE => {
-                                self.topic = message;
+                                self.topic.0 = message;
                             }
                             _ => self.history.message(&message, &timestamp, &origin),
                         }
@@ -273,5 +302,28 @@ impl ChatClient {
             .with_timezone(&Local);
 
         local.format("%H:%M:%S").to_string()
+    }
+}
+
+impl Renderable for ChatClient {
+    fn render_into(&self, buf: &mut crate::RenderBuffer, rect: &crate::Rect) {
+        self.topic.render_into(
+            buf,
+            &Rect {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: 1,
+            },
+        );
+        self.history.render_into(
+            buf,
+            &Rect {
+                x: rect.x,
+                y: rect.y + 1,
+                width: rect.width,
+                height: rect.height,
+            },
+        );
     }
 }

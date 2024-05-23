@@ -220,10 +220,21 @@ impl Prompt {
 
 impl Renderable for Prompt {
     fn render_into(&self, buf: &mut RenderBuffer, rect: &Rect) {
+        for i in 0..rect.width {
+            buf.put_at(
+                i,
+                rect.y,
+                '━',
+                style::Color::White,
+                style::Color::Reset,
+                CellStyle::Normal,
+            );
+        }
+
         for (i, &ch) in self.curr.iter().enumerate() {
             buf.put_at(
                 i as u16 + rect.x,
-                rect.y,
+                rect.y + 1,
                 ch,
                 style::Color::White,
                 style::Color::Reset,
