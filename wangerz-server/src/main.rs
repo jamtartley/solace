@@ -37,7 +37,7 @@ impl Server {
     fn new() -> Self {
         Self {
             clients: HashMap::new(),
-            topic: String::default(),
+            topic: "[No topic]".to_owned(),
         }
     }
 

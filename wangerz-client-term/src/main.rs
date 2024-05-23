@@ -11,8 +11,6 @@ use crossterm::{
     style::{self, Stylize},
     terminal, QueueableCommand,
 };
-use logger::Logger;
-use once_cell::sync::OnceCell;
 
 use crate::chat_client::ChatClient;
 
@@ -408,7 +406,7 @@ struct Screen;
 
 impl Screen {
     fn start(stdout: &mut io::Stdout) -> anyhow::Result<Self> {
-        crossterm::execute!(stdout, terminal::EnterAlternateScreen)?;
+        crossterm::execute!(stdout, terminal::EnterAlternateScreen,)?;
         terminal::enable_raw_mode()?;
 
         Ok(Self)
@@ -422,22 +420,7 @@ impl Drop for Screen {
     }
 }
 
-static LOGGER: OnceCell<Option<Logger>> = OnceCell::new();
-
-#[macro_export]
-macro_rules! log {
-    ($($arg:tt)*) => {
-        {
-            let log_message = format!($($arg)*);
-            if let Some(logger) = $crate::LOGGER.get_or_init(|| Some($crate::Logger::new("/tmp/wangerz.log"))) {
-                logger.log(&log_message);
-            }
-        }
-    };
-}
-
 fn main() -> anyhow::Result<()> {
-    let config = config::Config::new();
     let mut size = terminal::size()?;
     let mut chat_client = ChatClient::new();
     let mut stdout = io::stdout();

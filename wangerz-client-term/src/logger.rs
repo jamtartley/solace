@@ -4,6 +4,20 @@ use std::{
     sync::Mutex,
 };
 
+use once_cell::sync::Lazy;
+
+pub(crate) static LOGGER: Lazy<Logger> = Lazy::new(|| Logger::new("/tmp/wangerz.log"));
+
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {
+        {
+            let log_message = format!($($arg)*);
+            $crate::logger::LOGGER.log(&log_message);
+        }
+    };
+}
+
 pub(crate) struct Logger {
     file: Mutex<File>,
 }

@@ -6,7 +6,7 @@ use std::{
 use crossterm::style;
 use wangerz_protocol::{code::RES_TOPIC_CHANGE, request::Request, response::Response};
 
-use crate::Renderable;
+use crate::{color::hex_to_rgb, Renderable};
 
 #[derive(Debug)]
 struct ChatHistoryPartStyle {
@@ -77,11 +77,11 @@ impl ChatHistory {
                         value,
                         ChatHistoryPartStyle::new(
                             if has_origin {
-                                style::Color::White
+                                hex_to_rgb(crate::config!(colors.message))
                             } else {
-                                style::Color::Grey
+                                hex_to_rgb(crate::config!(colors.server_message))
                             },
-                            style::Color::Reset,
+                            hex_to_rgb(crate::config!(colors.background)),
                             crate::CellStyle::Normal,
                         ),
                     )]
@@ -93,7 +93,7 @@ impl ChatHistory {
                         raw_channel_name,
                         ChatHistoryPartStyle::new(
                             style::Color::Black,
-                            style::Color::Cyan,
+                            hex_to_rgb(crate::config!(colors.channel_mention)),
                             crate::CellStyle::Bold,
                         ),
                     )]
@@ -103,7 +103,7 @@ impl ChatHistory {
                         raw_user_name,
                         ChatHistoryPartStyle::new(
                             style::Color::Black,
-                            style::Color::Magenta,
+                            hex_to_rgb(crate::config!(colors.user_mention)),
                             crate::CellStyle::Bold,
                         ),
                     )]
@@ -120,8 +120,8 @@ impl ChatHistory {
                     let mut parts = vec![(
                         name,
                         ChatHistoryPartStyle::new(
-                            style::Color::DarkGreen,
-                            style::Color::Reset,
+                            hex_to_rgb(crate::config!(colors.command)),
+                            hex_to_rgb(crate::config!(colors.background)),
                             crate::CellStyle::Bold,
                         ),
                     )];
@@ -190,11 +190,11 @@ impl ChatHistory {
 
 #[derive(Debug)]
 pub(crate) struct ChatClient {
+    buf_message: Vec<u8>,
     pub(crate) history: ChatHistory,
     pub(crate) should_quit: bool,
     pub(crate) stream: Option<TcpStream>,
     pub(crate) topic: String,
-    buf_message: Vec<u8>,
 }
 
 impl ChatClient {
@@ -211,7 +211,7 @@ impl ChatClient {
             history: ChatHistory::new(),
             should_quit: false,
             stream,
-            topic: "Ji".to_owned(),
+            topic: String::new(),
         }
     }
 
