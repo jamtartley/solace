@@ -225,8 +225,8 @@ impl Renderable for Prompt {
                 i,
                 rect.y,
                 '━',
-                style::Color::White,
                 style::Color::Reset,
+                style::Color::White,
                 CellStyle::Normal,
             );
         }
@@ -236,8 +236,8 @@ impl Renderable for Prompt {
                 i as u16 + rect.x,
                 rect.y + 1,
                 ch,
-                style::Color::White,
                 style::Color::Reset,
+                style::Color::White,
                 CellStyle::default(),
             );
         }

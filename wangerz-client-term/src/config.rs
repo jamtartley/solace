@@ -27,12 +27,17 @@ pub(crate) struct Config {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Colors {
-    pub(crate) background: String,
+    pub(crate) bg: String,
     pub(crate) channel_mention: String,
     pub(crate) command: String,
-    pub(crate) foreground: String,
+    pub(crate) fg: String,
     pub(crate) message: String,
     pub(crate) server_message: String,
+    pub(crate) timestamp_bg: String,
+    pub(crate) timestamp_fg: String,
+    pub(crate) topic_bg: String,
+    pub(crate) topic_fg: String,
+    pub(crate) user_name: String,
     pub(crate) user_mention: String,
 }
 

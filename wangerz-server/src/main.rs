@@ -20,8 +20,8 @@ use rand::Rng;
 use wangerz_message_parser::AstNode;
 use wangerz_protocol::{
     code::{
-        ERR_COMMAND_NOT_FOUND, ERR_NICK_IN_USE, RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO,
-        RES_NICK_CHANGE, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME,
+        ERR_COMMAND_NOT_FOUND, RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE,
+        RES_WELCOME,
     },
     request::Request,
     response::ResponseBuilder,
@@ -220,64 +220,6 @@ fn server_worker(messages: Receiver<Message>) -> anyhow::Result<()> {
                             eprintln!("ERROR: Received empty message or parsing failed");
                         }
                     }
-                }
-            }
-            Message::NickChanged { stream, nickname } => {
-                let addr = &stream.clone().peer_addr().unwrap();
-
-                if server
-                    .other_clients(*addr)
-                    .iter()
-                    .any(|c| c.nick == nickname)
-                {
-                    ResponseBuilder::new(
-                        ERR_NICK_IN_USE,
-                        format!("Nick @{nickname} already in use!"),
-                    )
-                    .build()
-                    .write_to(&stream)?;
-                } else if let Some(client) = server.clients.get_mut(addr) {
-                    let old_nickname = client.nick.clone();
-
-                    if old_nickname == nickname {
-                        ResponseBuilder::new(
-                            RES_NICK_CHANGE,
-                            "That's already your nick!".to_owned(),
-                        )
-                        .build()
-                        .write_to(&client.conn)?;
-                    } else {
-                        client.nick.clone_from(&nickname);
-                        let nick_notification_user = format!("You are now known as @{}", nickname);
-                        let nick_notification_other =
-                            format!("@{} is now known as @{}", old_nickname, nickname);
-
-                        for (_, client) in server.clients.iter() {
-                            let notification = if client.ip == stream.peer_addr().unwrap() {
-                                nick_notification_user.clone()
-                            } else {
-                                nick_notification_other.clone()
-                            };
-                            ResponseBuilder::new(RES_NICK_CHANGE, notification)
-                                .build()
-                                .write_to(&client.conn)?;
-                        }
-                    }
-                }
-            }
-            Message::TopicChanged { new_topic } => {
-                server.topic = new_topic.clone();
-
-                for (_, client) in server.clients.iter() {
-                    ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone())
-                        .build()
-                        .write_to(&client.conn)?;
-                    ResponseBuilder::new(
-                        RES_TOPIC_CHANGE_MESSAGE,
-                        format!("Topic was changed to {}", server.topic.clone()),
-                    )
-                    .build()
-                    .write_to(&client.conn)?;
                 }
             }
         }

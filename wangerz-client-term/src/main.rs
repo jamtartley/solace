@@ -31,8 +31,8 @@ enum CellStyle {
 #[derive(Clone, Debug, PartialEq)]
 struct RenderCell {
     ch: char,
-    fg: style::Color,
     bg: style::Color,
+    fg: style::Color,
     cell_style: CellStyle,
 }
 
@@ -40,16 +40,16 @@ impl RenderCell {
     fn new() -> Self {
         Self {
             ch: ' ',
-            fg: style::Color::White,
             bg: style::Color::Reset,
+            fg: style::Color::White,
             cell_style: CellStyle::Normal,
         }
     }
 
     fn reset(&mut self) {
         self.ch = ' ';
-        self.fg = style::Color::White;
         self.bg = style::Color::Reset;
+        self.fg = style::Color::White;
         self.cell_style = CellStyle::Normal;
     }
 }
@@ -101,8 +101,8 @@ impl RenderBuffer {
         x: u16,
         y: u16,
         ch: char,
-        fg: style::Color,
         bg: style::Color,
+        fg: style::Color,
         cell_style: CellStyle,
     ) {
         let i = y * self.width + x;
@@ -110,8 +110,8 @@ impl RenderBuffer {
         if let Some(c) = self.cells.get_mut(i as usize) {
             *c = RenderCell {
                 ch,
-                fg,
                 bg,
+                fg,
                 cell_style,
             }
         }
@@ -122,8 +122,8 @@ impl RenderBuffer {
 
         for RenderCell {
             ch,
-            fg,
             bg,
+            fg,
             cell_style,
         } in &self.cells
         {
@@ -133,7 +133,7 @@ impl RenderBuffer {
                 CellStyle::Normal => style::Attribute::NormalIntensity,
             };
             qc.queue(style::PrintStyledContent(
-                ch.with(*fg).on(*bg).attribute(attr),
+                ch.on(*bg).with(*fg).attribute(attr),
             ))?;
         }
 
@@ -168,7 +168,7 @@ impl CellPatch {
 
         qc.queue(cursor::MoveTo(self.x, self.y))?
             .queue(style::PrintStyledContent(
-                ch.with(fg).on(bg).attribute(attr),
+                ch.on(bg).with(fg).attribute(attr),
             ))?;
 
         Ok(())

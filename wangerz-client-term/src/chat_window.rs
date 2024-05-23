@@ -4,6 +4,7 @@ use std::{
 };
 
 use crossterm::style;
+use wangerz_message_parser::{Ast, AstNode};
 use wangerz_protocol::{code::RES_TOPIC_CHANGE, request::Request, response::Response};
 
 use crate::{color::hex_to_rgb, CellStyle, Rect, Renderable};
@@ -31,8 +32,140 @@ impl ChatHistoryPart {
 }
 
 #[derive(Debug)]
+struct ChatHistoryEntry {
+    author: Option<String>,
+    parts: Vec<ChatHistoryPart>,
+    timestamp: String,
+}
+
+impl ChatHistoryEntry {
+    fn new(ast: Ast, author: Option<String>, timestamp: String) -> Self {
+        let mut parts = vec![
+            Self::part_from_timestamp(timestamp.clone()),
+            Self::part_from_author(author.clone()),
+        ];
+        parts.extend(
+            ast.nodes
+                .into_iter()
+                .flat_map(|arg| Self::parts_for_node(arg, author.clone()))
+                .collect::<Vec<ChatHistoryPart>>(),
+        );
+
+        Self {
+            author,
+            timestamp,
+            parts,
+        }
+    }
+
+    fn part_from_timestamp(timestamp: String) -> ChatHistoryPart {
+        ChatHistoryPart::new(
+            format!(" {timestamp} "),
+            ChatHistoryPartStyle::new(
+                hex_to_rgb(crate::config!(colors.timestamp_fg)),
+                hex_to_rgb(crate::config!(colors.timestamp_bg)),
+                crate::CellStyle::Bold,
+            ),
+        )
+    }
+
+    fn part_from_author(author: Option<String>) -> ChatHistoryPart {
+        const MAX_AUTHOR_LENGTH: usize = 16;
+
+        let formatted_part = if let Some(author) = author.clone() {
+            let truncated_author = if author.len() > MAX_AUTHOR_LENGTH {
+                &author[..MAX_AUTHOR_LENGTH]
+            } else {
+                author.as_str()
+            };
+            format!(" {:>17} ", format!("@{truncated_author}"))
+        } else {
+            format!(" {:>17} ", "--")
+        };
+
+        ChatHistoryPart::new(
+            formatted_part,
+            ChatHistoryPartStyle::new(
+                if author.is_some() {
+                    hex_to_rgb(crate::config!(colors.user_name))
+                } else {
+                    hex_to_rgb(crate::config!(colors.server_message))
+                },
+                style::Color::Reset,
+                if author.is_some() {
+                    crate::CellStyle::Bold
+                } else {
+                    crate::CellStyle::Normal
+                },
+            ),
+        )
+    }
+
+    fn parts_for_node(node: AstNode, author: Option<String>) -> Vec<ChatHistoryPart> {
+        match node {
+            wangerz_message_parser::AstNode::Text { value, .. } => {
+                vec![ChatHistoryPart::new(
+                    value,
+                    ChatHistoryPartStyle::new(
+                        if author.is_some() {
+                            hex_to_rgb(crate::config!(colors.message))
+                        } else {
+                            hex_to_rgb(crate::config!(colors.server_message))
+                        },
+                        style::Color::Reset,
+                        crate::CellStyle::Normal,
+                    ),
+                )]
+            }
+            wangerz_message_parser::AstNode::ChannelMention {
+                raw_channel_name, ..
+            } => {
+                vec![ChatHistoryPart::new(
+                    raw_channel_name,
+                    ChatHistoryPartStyle::new(
+                        hex_to_rgb(crate::config!(colors.channel_mention)),
+                        style::Color::Reset,
+                        crate::CellStyle::Bold,
+                    ),
+                )]
+            }
+            wangerz_message_parser::AstNode::UserMention { raw_user_name, .. } => {
+                vec![ChatHistoryPart::new(
+                    raw_user_name,
+                    ChatHistoryPartStyle::new(
+                        hex_to_rgb(crate::config!(colors.user_mention)),
+                        style::Color::Reset,
+                        crate::CellStyle::Bold,
+                    ),
+                )]
+            }
+            wangerz_message_parser::AstNode::Command {
+                raw_name: name,
+                args,
+                ..
+            } => {
+                let args_parts = args
+                    .into_iter()
+                    .flat_map(|arg| Self::parts_for_node(arg, author.clone()))
+                    .collect::<Vec<ChatHistoryPart>>();
+                let mut parts = vec![ChatHistoryPart::new(
+                    name,
+                    ChatHistoryPartStyle::new(
+                        hex_to_rgb(crate::config!(colors.command)),
+                        style::Color::Reset,
+                        crate::CellStyle::Bold,
+                    ),
+                )];
+                parts.extend(args_parts);
+                parts
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 struct ChatHistory {
-    entries: Vec<Vec<ChatHistoryPart>>,
+    entries: Vec<ChatHistoryEntry>,
 }
 
 impl Renderable for ChatHistory {
@@ -42,7 +175,7 @@ impl Renderable for ChatHistory {
         for (i, entry) in self.entries.iter().rev().take(height).enumerate() {
             let mut x = rect.x;
 
-            for part in entry.iter() {
+            for part in entry.parts.iter() {
                 for ch in part.0.chars() {
                     if x >= rect.width {
                         break;
@@ -50,7 +183,7 @@ impl Renderable for ChatHistory {
 
                     let y = rect.y + rect.height - 1 - i as u16;
 
-                    buf.put_at(x, y, ch, part.1.fg, part.1.bg, part.1.attr);
+                    buf.put_at(x, y, ch, part.1.bg, part.1.fg, part.1.attr);
 
                     x += 1;
                 }
@@ -64,133 +197,18 @@ impl ChatHistory {
         Self { entries: vec![] }
     }
 
-    fn error(&mut self, msg: impl Into<String>) {
-        self.entries.push(vec![ChatHistoryPart::new(
-            msg.into(),
-            ChatHistoryPartStyle::new(
-                style::Color::Red,
-                style::Color::Reset,
-                crate::CellStyle::Bold,
-            ),
-        )]);
-    }
+    fn error(&mut self, _msg: impl Into<String>) {}
 
     fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
-        fn parts_for_node(
-            node: wangerz_message_parser::AstNode,
-            has_origin: bool,
-        ) -> Vec<ChatHistoryPart> {
-            match node {
-                wangerz_message_parser::AstNode::Text { value, .. } => {
-                    vec![ChatHistoryPart::new(
-                        value,
-                        ChatHistoryPartStyle::new(
-                            if has_origin {
-                                hex_to_rgb(crate::config!(colors.message))
-                            } else {
-                                hex_to_rgb(crate::config!(colors.server_message))
-                            },
-                            hex_to_rgb(crate::config!(colors.background)),
-                            crate::CellStyle::Normal,
-                        ),
-                    )]
-                }
-                wangerz_message_parser::AstNode::ChannelMention {
-                    raw_channel_name, ..
-                } => {
-                    vec![ChatHistoryPart::new(
-                        raw_channel_name,
-                        ChatHistoryPartStyle::new(
-                            style::Color::Black,
-                            hex_to_rgb(crate::config!(colors.channel_mention)),
-                            crate::CellStyle::Bold,
-                        ),
-                    )]
-                }
-                wangerz_message_parser::AstNode::UserMention { raw_user_name, .. } => {
-                    vec![ChatHistoryPart::new(
-                        raw_user_name,
-                        ChatHistoryPartStyle::new(
-                            style::Color::Black,
-                            hex_to_rgb(crate::config!(colors.user_mention)),
-                            crate::CellStyle::Bold,
-                        ),
-                    )]
-                }
-                wangerz_message_parser::AstNode::Command {
-                    raw_name: name,
-                    args,
-                    ..
-                } => {
-                    let args_parts = args
-                        .into_iter()
-                        .flat_map(|part| parts_for_node(part, has_origin))
-                        .collect::<Vec<_>>();
-                    let mut parts = vec![ChatHistoryPart::new(
-                        name,
-                        ChatHistoryPartStyle::new(
-                            hex_to_rgb(crate::config!(colors.command)),
-                            hex_to_rgb(crate::config!(colors.background)),
-                            crate::CellStyle::Bold,
-                        ),
-                    )];
-                    parts.extend(args_parts);
-                    parts
-                }
-            }
-        }
-
-        let has_origin = !origin.is_empty();
         let parsed = wangerz_message_parser::parse(msg);
-        let mut entry = parsed
-            .nodes
-            .into_iter()
-            .flat_map(|part| parts_for_node(part, has_origin))
-            .collect::<Vec<_>>();
-
-        // @REFACTOR: Come up with a better way to prepend metadata to chat log entry
-        entry.insert(
-            0,
-            ChatHistoryPart::new(
-                format!(" {timestamp} "),
-                ChatHistoryPartStyle::new(
-                    style::Color::Grey,
-                    style::Color::DarkGrey,
-                    crate::CellStyle::Bold,
-                ),
-            ),
-        );
-        entry.insert(
-            1,
-            ChatHistoryPart::new(
-                format!(
-                    " {origin:16}",
-                    origin = format!(
-                        "{marker}{origin:15}",
-                        marker = if has_origin { "@" } else { "--" }
-                    )
-                ),
-                ChatHistoryPartStyle::new(
-                    if has_origin {
-                        style::Color::Cyan
-                    } else {
-                        style::Color::Grey
-                    },
-                    style::Color::Reset,
-                    crate::CellStyle::Bold,
-                ),
-            ),
-        );
-        entry.insert(
-            2,
-            ChatHistoryPart::new(
-                " ".to_owned(),
-                ChatHistoryPartStyle::new(
-                    style::Color::Reset,
-                    style::Color::Reset,
-                    crate::CellStyle::Normal,
-                ),
-            ),
+        let entry = ChatHistoryEntry::new(
+            parsed,
+            if origin.is_empty() {
+                None
+            } else {
+                Some(origin.to_owned())
+            },
+            timestamp.to_owned(),
         );
 
         self.entries.push(entry);
@@ -208,18 +226,18 @@ impl Renderable for ChatTopic {
                     i,
                     0,
                     ch,
-                    style::Color::Black,
-                    style::Color::Cyan,
-                    CellStyle::Italic,
+                    hex_to_rgb(crate::config!(colors.topic_bg)),
+                    hex_to_rgb(crate::config!(colors.topic_fg)),
+                    CellStyle::Bold,
                 );
             } else {
                 buf.put_at(
                     i,
                     0,
                     ' ',
-                    style::Color::Black,
-                    style::Color::Cyan,
-                    CellStyle::Italic,
+                    hex_to_rgb(crate::config!(colors.topic_bg)),
+                    hex_to_rgb(crate::config!(colors.topic_fg)),
+                    CellStyle::Bold,
                 );
             }
         }
