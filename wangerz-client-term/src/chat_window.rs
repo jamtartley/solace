@@ -22,8 +22,17 @@ impl ChatHistoryPartStyle {
 }
 
 #[derive(Debug)]
-pub(crate) struct ChatHistory {
-    entries: Vec<Vec<(String, ChatHistoryPartStyle)>>,
+struct ChatHistoryPart(String, ChatHistoryPartStyle);
+
+impl ChatHistoryPart {
+    fn new(text: String, style: ChatHistoryPartStyle) -> Self {
+        Self(text, style)
+    }
+}
+
+#[derive(Debug)]
+struct ChatHistory {
+    entries: Vec<Vec<ChatHistoryPart>>,
 }
 
 impl Renderable for ChatHistory {
@@ -55,8 +64,8 @@ impl ChatHistory {
         Self { entries: vec![] }
     }
 
-    pub(crate) fn error(&mut self, msg: impl Into<String>) {
-        self.entries.push(vec![(
+    fn error(&mut self, msg: impl Into<String>) {
+        self.entries.push(vec![ChatHistoryPart::new(
             msg.into(),
             ChatHistoryPartStyle::new(
                 style::Color::Red,
@@ -66,14 +75,14 @@ impl ChatHistory {
         )]);
     }
 
-    pub(crate) fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
+    fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
         fn parts_for_node(
             node: wangerz_message_parser::AstNode,
             has_origin: bool,
-        ) -> Vec<(String, ChatHistoryPartStyle)> {
+        ) -> Vec<ChatHistoryPart> {
             match node {
                 wangerz_message_parser::AstNode::Text { value, .. } => {
-                    vec![(
+                    vec![ChatHistoryPart::new(
                         value,
                         ChatHistoryPartStyle::new(
                             if has_origin {
@@ -89,7 +98,7 @@ impl ChatHistory {
                 wangerz_message_parser::AstNode::ChannelMention {
                     raw_channel_name, ..
                 } => {
-                    vec![(
+                    vec![ChatHistoryPart::new(
                         raw_channel_name,
                         ChatHistoryPartStyle::new(
                             style::Color::Black,
@@ -99,7 +108,7 @@ impl ChatHistory {
                     )]
                 }
                 wangerz_message_parser::AstNode::UserMention { raw_user_name, .. } => {
-                    vec![(
+                    vec![ChatHistoryPart::new(
                         raw_user_name,
                         ChatHistoryPartStyle::new(
                             style::Color::Black,
@@ -117,7 +126,7 @@ impl ChatHistory {
                         .into_iter()
                         .flat_map(|part| parts_for_node(part, has_origin))
                         .collect::<Vec<_>>();
-                    let mut parts = vec![(
+                    let mut parts = vec![ChatHistoryPart::new(
                         name,
                         ChatHistoryPartStyle::new(
                             hex_to_rgb(crate::config!(colors.command)),
@@ -142,7 +151,7 @@ impl ChatHistory {
         // @REFACTOR: Come up with a better way to prepend metadata to chat log entry
         entry.insert(
             0,
-            (
+            ChatHistoryPart::new(
                 format!(" {timestamp} "),
                 ChatHistoryPartStyle::new(
                     style::Color::Grey,
@@ -153,7 +162,7 @@ impl ChatHistory {
         );
         entry.insert(
             1,
-            (
+            ChatHistoryPart::new(
                 format!(
                     " {origin:16}",
                     origin = format!(
@@ -174,7 +183,7 @@ impl ChatHistory {
         );
         entry.insert(
             2,
-            (
+            ChatHistoryPart::new(
                 " ".to_owned(),
                 ChatHistoryPartStyle::new(
                     style::Color::Reset,
@@ -218,15 +227,14 @@ impl Renderable for ChatTopic {
 }
 
 #[derive(Debug)]
-pub(crate) struct ChatClient {
+pub(crate) struct ChatWindow {
     buf_message: Vec<u8>,
     stream: Option<TcpStream>,
     topic: ChatTopic,
     history: ChatHistory,
-    pub(crate) should_quit: bool,
 }
 
-impl ChatClient {
+impl ChatWindow {
     pub(crate) fn new() -> Self {
         let stream = TcpStream::connect("0.0.0.0:7878")
             .and_then(|s| {
@@ -238,7 +246,6 @@ impl ChatClient {
         Self {
             buf_message: Vec::new(),
             history: ChatHistory::new(),
-            should_quit: false,
             stream,
             topic: ChatTopic::default(),
         }
@@ -305,7 +312,7 @@ impl ChatClient {
     }
 }
 
-impl Renderable for ChatClient {
+impl Renderable for ChatWindow {
     fn render_into(&self, buf: &mut crate::RenderBuffer, rect: &crate::Rect) {
         self.topic.render_into(
             buf,

@@ -12,9 +12,9 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 
-use crate::chat_client::ChatClient;
+use crate::chat_window::ChatWindow;
 
-mod chat_client;
+mod chat_window;
 mod color;
 mod config;
 mod logger;
@@ -211,16 +211,17 @@ impl Drop for Screen {
 }
 
 fn main() -> anyhow::Result<()> {
+    const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
     let mut size = terminal::size()?;
-    let mut chat_client = ChatClient::new();
+    let mut chat_window = ChatWindow::new();
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0, size.1);
     let mut buf_prev = RenderBuffer::new(size.0, size.1);
     let mut prompt = prompt::Prompt::new();
+    let mut should_quit = false;
     let _screen = Screen::start(&mut stdout)?;
-    const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
 
-    while !chat_client.should_quit {
+    while !should_quit {
         if event::poll(FRAME_TIME)? {
             match event::read()? {
                 event::Event::Resize(width, height) => {
@@ -240,10 +241,10 @@ fn main() -> anyhow::Result<()> {
                             if modifiers.contains(event::KeyModifiers::CONTROL) =>
                         {
                             // @TODO: Revisit quitting method
-                            chat_client.should_quit = true
+                            should_quit = true;
                         }
                         event::KeyCode::Enter => {
-                            chat_client.write(prompt.current_value())?;
+                            chat_window.write(prompt.current_value())?;
                             prompt.flush();
                         }
                         _ => prompt.handle_key_press(code),
@@ -255,8 +256,8 @@ fn main() -> anyhow::Result<()> {
 
         buf_curr.clear();
 
-        chat_client.read()?;
-        chat_client.render_into(
+        chat_window.read()?;
+        chat_window.render_into(
             &mut buf_curr,
             &Rect {
                 x: 0,
