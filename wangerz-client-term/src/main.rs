@@ -2,7 +2,7 @@
 
 use std::{
     io::{self, Write},
-    mem,
+    mem, panic,
     time::Duration,
 };
 
@@ -211,6 +211,13 @@ impl Drop for Screen {
 }
 
 fn main() -> anyhow::Result<()> {
+    panic::set_hook(Box::new(|info| {
+        crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
+        terminal::disable_raw_mode().unwrap();
+        eprintln!("ERROR: {}", info);
+        std::process::exit(1);
+    }));
+
     const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
     let mut size = terminal::size()?;
     let mut chat_window = ChatWindow::new();

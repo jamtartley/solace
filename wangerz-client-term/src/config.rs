@@ -57,10 +57,10 @@ impl Config {
 
                     return Ok(config);
                 }
-            } else {
-                crate::log!("NO");
             }
         }
+
+        // @FIXME: Generate default config if we don't find one
 
         anyhow::bail!("ERROR: No config file found!")
     }
