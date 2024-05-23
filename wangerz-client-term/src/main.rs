@@ -18,6 +18,7 @@ mod chat_client;
 mod color;
 mod config;
 mod logger;
+mod prompt;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 enum CellStyle {
@@ -191,217 +192,6 @@ enum Mode {
     Insert,
 }
 
-#[derive(Debug)]
-struct Prompt {
-    command_buffer: Vec<char>,
-    curr: Vec<char>,
-    history: Vec<String>,
-    history_offset: usize,
-    mode: Mode,
-    pos: usize,
-}
-
-impl Prompt {
-    fn new() -> Self {
-        Self {
-            command_buffer: vec![],
-            curr: vec![],
-            history: vec![],
-            history_offset: 0,
-            mode: Mode::Insert,
-            pos: 0,
-        }
-    }
-
-    fn insert(&mut self, ch: char) {
-        self.curr.insert(self.pos, ch);
-        self.pos += 1;
-    }
-
-    fn remove(&mut self) {
-        if self.pos > 0 {
-            self.pos -= 1;
-            self.curr.remove(self.pos);
-        }
-    }
-
-    fn handle_key_press(&mut self, key_code: event::KeyCode) {
-        match self.mode {
-            Mode::Insert => self.handle_insert(key_code),
-            Mode::Normal => self.handle_normal(key_code),
-        }
-    }
-
-    fn handle_insert(&mut self, key_code: event::KeyCode) {
-        match key_code {
-            event::KeyCode::Char(ch) => self.insert(ch),
-            event::KeyCode::Esc => {
-                self.switch_to_mode(Mode::Normal);
-                self.pos = self.pos.saturating_sub(1);
-            }
-            event::KeyCode::Backspace => self.remove(),
-            event::KeyCode::Up => self.fetch_previous(),
-            event::KeyCode::Down => self.fetch_next(),
-            _ => (),
-        }
-    }
-
-    fn switch_to_mode(&mut self, new_mode: Mode) {
-        self.mode = new_mode;
-        self.command_buffer.clear();
-    }
-
-    fn handle_normal(&mut self, key_code: event::KeyCode) {
-        match key_code {
-            event::KeyCode::Char(ch) if self.command_buffer.first() == Some(&'F') => {
-                if let Some(found_at) = self.find_previous_index(|c| c == ch) {
-                    self.pos = found_at;
-                }
-
-                self.command_buffer.clear();
-            }
-            event::KeyCode::Char('i') => self.switch_to_mode(Mode::Insert),
-            event::KeyCode::Char('h') => self.pos = self.pos.saturating_sub(1),
-            event::KeyCode::Char('l') => {
-                self.pos = (self.pos + 1).clamp(0, self.curr.len().saturating_sub(1))
-            }
-            event::KeyCode::Char('I') => {
-                self.switch_to_mode(Mode::Insert);
-                self.pos = 0;
-            }
-            event::KeyCode::Char('a') => {
-                self.switch_to_mode(Mode::Insert);
-                if self.pos < self.curr.len() {
-                    self.pos += 1;
-                }
-            }
-            event::KeyCode::Char('A') => {
-                self.switch_to_mode(Mode::Insert);
-                self.pos = self.curr.len();
-            }
-            event::KeyCode::Char('C') => {
-                self.delete_until_end();
-                self.switch_to_mode(Mode::Insert);
-            }
-            event::KeyCode::Char('D') => {
-                self.delete_until_end();
-                self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
-            }
-            event::KeyCode::Char('F') => self.command_buffer.push('F'),
-            event::KeyCode::Char('d') => {
-                if let Some(ch) = self.command_buffer.first() {
-                    if ch == &'d' {
-                        self.clear();
-                        self.command_buffer.clear();
-                    }
-                } else {
-                    self.command_buffer.push('d');
-                }
-            }
-            event::KeyCode::Char('x') => {
-                if !self.curr.is_empty() {
-                    self.curr.remove(self.pos);
-                    self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
-                }
-            }
-            event::KeyCode::Char('X') => self.clear(),
-            event::KeyCode::Char('0') => self.pos = 0,
-            event::KeyCode::Char('$') => self.pos = self.curr.len(),
-            event::KeyCode::Up => self.fetch_previous(),
-            event::KeyCode::Down => self.fetch_next(),
-            event::KeyCode::Esc => self.command_buffer.clear(),
-            _ => (),
-        }
-    }
-
-    fn clear(&mut self) {
-        self.curr.clear();
-        self.pos = 0;
-        self.switch_to_mode(Mode::Insert);
-    }
-
-    fn flush(&mut self) {
-        self.history.push(self.curr.iter().collect::<String>());
-        self.history_offset = 0;
-
-        self.clear()
-    }
-
-    fn fetch_previous(&mut self) {
-        // @CLEANUP: fetch_previous()/fetch_next()
-        if self.history_offset + 1 > self.history.len() {
-            return;
-        }
-
-        self.history_offset += 1;
-
-        if let Some(entry) = self.history.get(self.history.len() - self.history_offset) {
-            self.curr = entry.chars().collect();
-            self.pos = self.curr.len();
-        }
-    }
-
-    fn fetch_next(&mut self) {
-        if self.history_offset == 0 {
-            return;
-        }
-
-        self.history_offset -= 1;
-
-        if let Some(entry) = self.history.get(self.history.len() - self.history_offset) {
-            self.curr = entry.chars().collect();
-            self.pos = self.curr.len();
-        }
-    }
-
-    fn delete_until_end(&mut self) {
-        self.curr = self
-            .curr
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| i < &self.pos)
-            .map(|(_, val)| *val)
-            .collect::<Vec<char>>();
-    }
-
-    fn find_previous_index<F>(&self, predicate: F) -> Option<usize>
-    where
-        F: Fn(char) -> bool,
-    {
-        if self.pos == 0 {
-            return None;
-        }
-
-        let mut pos = self.pos - 1;
-        while pos > 0 {
-            if let Some(ch) = self.curr.get(pos) {
-                if predicate(*ch) {
-                    return Some(pos);
-                }
-            }
-
-            pos -= 1;
-        }
-
-        None
-    }
-}
-
-impl Renderable for Prompt {
-    fn render_into(&self, buf: &mut RenderBuffer, rect: &Rect) {
-        for (i, &ch) in self.curr.iter().enumerate() {
-            buf.put_at(
-                i as u16 + rect.x,
-                rect.y,
-                ch,
-                style::Color::White,
-                style::Color::Reset,
-                CellStyle::default(),
-            );
-        }
-    }
-}
-
 struct Screen;
 
 impl Screen {
@@ -426,7 +216,7 @@ fn main() -> anyhow::Result<()> {
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0, size.1);
     let mut buf_prev = RenderBuffer::new(size.0, size.1);
-    let mut prompt = Prompt::new();
+    let mut prompt = prompt::Prompt::new();
     let _screen = Screen::start(&mut stdout)?;
     const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
 
@@ -453,11 +243,7 @@ fn main() -> anyhow::Result<()> {
                             chat_client.should_quit = true
                         }
                         event::KeyCode::Enter => {
-                            let to_send = prompt.curr.iter().collect::<String>();
-
-                            chat_client.write(to_send)?;
-
-                            // @CLEANUP: maybe render an error message in the log if not?
+                            chat_client.write(prompt.current_value())?;
                             prompt.flush();
                         }
                         _ => prompt.handle_key_press(code),
@@ -525,13 +311,8 @@ fn main() -> anyhow::Result<()> {
             patch.render_to(&mut stdout)?;
         }
 
-        stdout
-            .queue(cursor::MoveTo(prompt.pos as u16, size.1 - 1))?
-            .queue(match prompt.mode {
-                Mode::Insert => cursor::SetCursorStyle::SteadyBar,
-                Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
-            })?
-            .flush()?;
+        // @CLEANUP: assumption of prompt y pos
+        prompt.align_cursor(&mut stdout, size.1)?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);
     }
