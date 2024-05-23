@@ -12,11 +12,15 @@ pub(crate) static CONFIG: Lazy<Config> =
 
 #[macro_export]
 macro_rules! config {
-    ($field:ident) => {
-        &$crate::config::CONFIG.$field
+    ($field:ident $(. $subfield:ident)*) => {
+        &$crate::config::CONFIG.$field $(. $subfield)*
     };
-    ($field:ident.$subfield:ident) => {
-        &$crate::config::CONFIG.$field.$subfield
+}
+
+#[macro_export]
+macro_rules! config_hex_color {
+    ($field:ident $(. $subfield:ident)*) => {
+        $crate::color::hex_to_rgb($crate::config!($field $(. $subfield)*))
     };
 }
 

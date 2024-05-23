@@ -154,11 +154,9 @@ const COMMANDS: &[Command] = &[
     },
 ];
 
-pub(crate) fn parse_command(
-    command_node: &wangerz_message_parser::AstNode,
-) -> anyhow::Result<Option<Command>> {
+pub(crate) fn parse_command(command_node: &AstNode) -> anyhow::Result<Option<Command>> {
     match command_node {
-        wangerz_message_parser::AstNode::Command { parsed_name, .. } => {
+        AstNode::Command { parsed_name, .. } => {
             for command in COMMANDS.iter() {
                 if parsed_name == command.name {
                     return Ok(Some(command.clone()));

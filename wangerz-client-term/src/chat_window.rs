@@ -7,7 +7,7 @@ use crossterm::style;
 use wangerz_message_parser::{Ast, AstNode};
 use wangerz_protocol::{code::RES_TOPIC_CHANGE, request::Request, response::Response};
 
-use crate::{color::hex_to_rgb, CellStyle, Rect, Renderable};
+use crate::{config_hex_color, CellStyle, Rect, Renderable};
 
 #[derive(Debug)]
 struct ChatHistoryPartStyle {
@@ -62,8 +62,8 @@ impl ChatHistoryEntry {
         ChatHistoryPart::new(
             format!(" {timestamp} "),
             ChatHistoryPartStyle::new(
-                hex_to_rgb(crate::config!(colors.timestamp_fg)),
-                hex_to_rgb(crate::config!(colors.timestamp_bg)),
+                config_hex_color!(colors.timestamp_fg),
+                config_hex_color!(colors.timestamp_bg),
                 crate::CellStyle::Bold,
             ),
         )
@@ -87,9 +87,9 @@ impl ChatHistoryEntry {
             formatted_part,
             ChatHistoryPartStyle::new(
                 if author.is_some() {
-                    hex_to_rgb(crate::config!(colors.user_name))
+                    config_hex_color!(colors.user_name)
                 } else {
-                    hex_to_rgb(crate::config!(colors.server_message))
+                    config_hex_color!(colors.server_message)
                 },
                 style::Color::Reset,
                 if author.is_some() {
@@ -108,9 +108,9 @@ impl ChatHistoryEntry {
                     value,
                     ChatHistoryPartStyle::new(
                         if author.is_some() {
-                            hex_to_rgb(crate::config!(colors.message))
+                            config_hex_color!(colors.message)
                         } else {
-                            hex_to_rgb(crate::config!(colors.server_message))
+                            config_hex_color!(colors.server_message)
                         },
                         style::Color::Reset,
                         crate::CellStyle::Normal,
@@ -123,7 +123,7 @@ impl ChatHistoryEntry {
                 vec![ChatHistoryPart::new(
                     raw_channel_name,
                     ChatHistoryPartStyle::new(
-                        hex_to_rgb(crate::config!(colors.channel_mention)),
+                        config_hex_color!(colors.channel_mention),
                         style::Color::Reset,
                         crate::CellStyle::Bold,
                     ),
@@ -133,7 +133,7 @@ impl ChatHistoryEntry {
                 vec![ChatHistoryPart::new(
                     raw_user_name,
                     ChatHistoryPartStyle::new(
-                        hex_to_rgb(crate::config!(colors.user_mention)),
+                        config_hex_color!(colors.user_mention),
                         style::Color::Reset,
                         crate::CellStyle::Bold,
                     ),
@@ -151,7 +151,7 @@ impl ChatHistoryEntry {
                 let mut parts = vec![ChatHistoryPart::new(
                     name,
                     ChatHistoryPartStyle::new(
-                        hex_to_rgb(crate::config!(colors.command)),
+                        config_hex_color!(colors.command),
                         style::Color::Reset,
                         crate::CellStyle::Bold,
                     ),
@@ -226,8 +226,8 @@ impl Renderable for ChatTopic {
                     i,
                     0,
                     ch,
-                    hex_to_rgb(crate::config!(colors.topic_bg)),
-                    hex_to_rgb(crate::config!(colors.topic_fg)),
+                    config_hex_color!(colors.topic_bg),
+                    config_hex_color!(colors.topic_fg),
                     CellStyle::Bold,
                 );
             } else {
@@ -235,8 +235,8 @@ impl Renderable for ChatTopic {
                     i,
                     0,
                     ' ',
-                    hex_to_rgb(crate::config!(colors.topic_bg)),
-                    hex_to_rgb(crate::config!(colors.topic_fg)),
+                    config_hex_color!(colors.topic_bg),
+                    config_hex_color!(colors.topic_fg),
                     CellStyle::Bold,
                 );
             }
