@@ -11,3 +11,4 @@ pub const RES_TOPIC_CHANGE_MESSAGE: u16 = 203;
 
 pub const ERR_COMMAND_NOT_FOUND: u16 = 300;
 pub const ERR_INVALID_ARGUMENT: u16 = 301;
+pub const ERR_NICK_IN_USE: u16 = 302;
