@@ -17,6 +17,8 @@ use once_cell::sync::OnceCell;
 use crate::chat_client::ChatClient;
 
 mod chat_client;
+mod color;
+mod config;
 mod logger;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -288,13 +290,16 @@ impl Prompt {
                 self.pos = self.pos.clamp(0, self.curr.len().saturating_sub(1));
             }
             event::KeyCode::Char('F') => self.command_buffer.push('F'),
-            event::KeyCode::Char('d') => match self.command_buffer.first() {
-                Some(ch) if ch == &'d' => {
-                    self.clear();
-                    self.command_buffer.clear();
+            event::KeyCode::Char('d') => {
+                if let Some(ch) = self.command_buffer.first() {
+                    if ch == &'d' {
+                        self.clear();
+                        self.command_buffer.clear();
+                    }
+                } else {
+                    self.command_buffer.push('d');
                 }
-                _ => self.command_buffer.push('d'),
-            },
+            }
             event::KeyCode::Char('x') => {
                 if !self.curr.is_empty() {
                     self.curr.remove(self.pos);
@@ -432,6 +437,7 @@ macro_rules! log {
 }
 
 fn main() -> anyhow::Result<()> {
+    let config = config::Config::new();
     let mut size = terminal::size()?;
     let mut chat_client = ChatClient::new();
     let mut stdout = io::stdout();
