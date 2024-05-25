@@ -1,6 +1,10 @@
 use std::{io::Write, net::TcpStream};
 
 use anyhow::Context;
+use tokio_util::{
+    bytes::{Buf, BufMut},
+    codec::{Decoder, Encoder},
+};
 
 /// The structure of the request is as follows:
 /// - The first byte represents the version flag.
@@ -68,5 +72,43 @@ impl TryFrom<&mut Vec<u8>> for Request {
         }
 
         Err(anyhow::anyhow!("ERROR: Invalid reqeust"))
+    }
+}
+
+impl Decoder for Request {
+    type Item = Request;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut tokio_util::bytes::BytesMut) -> anyhow::Result<Option<Request>> {
+        if let Some(pos) = src.windows(2).position(|w| w == b"\r\n") {
+            let mut buf = src.split_to(pos).freeze();
+            let version = buf.get_u8();
+            let id = buf.get_u32();
+            let message = String::from_utf8(buf[..].to_vec())?;
+
+            return Ok(Some(Request {
+                version,
+                id,
+                message,
+            }));
+        }
+
+        Ok(None)
+    }
+}
+
+impl Encoder<Request> for Request {
+    type Error = anyhow::Error;
+
+    fn encode(
+        &mut self,
+        item: Request,
+        dst: &mut tokio_util::bytes::BytesMut,
+    ) -> anyhow::Result<()> {
+        let bytes = item.as_bytes();
+        dst.reserve(bytes.len());
+        dst.put(&bytes[..]);
+
+        Ok(())
     }
 }

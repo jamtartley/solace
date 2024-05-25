@@ -1,6 +1,10 @@
 use std::{io::Write, net::TcpStream, sync::Arc};
 
 use anyhow::Context;
+use tokio_util::{
+    bytes::{Buf, BufMut},
+    codec::{Decoder, Encoder},
+};
 
 /// The structure of the response is as follows:
 /// - The first byte represents the version flag.
@@ -142,5 +146,55 @@ impl ResponseBuilder {
             origin: self.origin,
             message: self.message,
         }
+    }
+}
+
+impl Decoder for Response {
+    type Item = Response;
+    type Error = anyhow::Error;
+
+    fn decode(
+        &mut self,
+        src: &mut tokio_util::bytes::BytesMut,
+    ) -> anyhow::Result<Option<Response>> {
+        if let Some(pos) = src.windows(2).position(|w| w == b"\r\n") {
+            let mut buf = src.split_to(pos).freeze();
+            let version = buf.get_u8();
+            let request_id = buf.get_u32();
+            let timestamp = buf.get_u64();
+            let code = buf.get_u16();
+            let origin_length = buf.get_u8();
+            let origin_end = 16 + origin_length;
+            let origin = String::from_utf8(buf[16..usize::from(origin_end)].to_vec())?;
+            let message = String::from_utf8(buf[usize::from(origin_end)..].to_vec())?;
+
+            return Ok(Some(Response {
+                version,
+                request_id,
+                timestamp,
+                code,
+                origin,
+                origin_length,
+                message,
+            }));
+        }
+
+        Ok(None)
+    }
+}
+
+impl Encoder<Response> for Response {
+    type Error = anyhow::Error;
+
+    fn encode(
+        &mut self,
+        item: Response,
+        dst: &mut tokio_util::bytes::BytesMut,
+    ) -> anyhow::Result<()> {
+        let bytes = item.as_bytes();
+        dst.reserve(bytes.len());
+        dst.put(&bytes[..]);
+
+        Ok(())
     }
 }

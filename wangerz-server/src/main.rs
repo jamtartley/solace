@@ -1,14 +1,18 @@
 #![allow(dead_code)]
 
+use futures::sink::SinkExt;
+use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
-use tokio_util::codec::{Framed, LinesCodec};
+use tokio_util::codec::{FramedRead, FramedWrite};
 
-use futures::SinkExt;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use wangerz_protocol::code::{RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_WELCOME};
+use wangerz_protocol::request::Request;
+use wangerz_protocol::response::{Response, ResponseBuilder};
 
 type Tx = mpsc::UnboundedSender<Message>;
 type Rx = mpsc::UnboundedReceiver<Message>;
@@ -22,11 +26,13 @@ enum Message {
 
 struct Server {
     clients: HashMap<SocketAddr, Tx>,
+    topic: String,
 }
 
 struct Client {
     addr: SocketAddr,
-    lines: Framed<TcpStream, LinesCodec>,
+    req: FramedRead<ReadHalf<TcpStream>, Request>,
+    res: FramedWrite<WriteHalf<TcpStream>, Response>,
     rx: Rx,
 }
 
@@ -34,6 +40,7 @@ impl Server {
     fn new() -> Self {
         Server {
             clients: HashMap::new(),
+            topic: "[No topic]".to_owned(),
         }
     }
 
@@ -55,68 +62,76 @@ impl Server {
 impl Client {
     async fn new(
         addr: SocketAddr,
-        state: Arc<Mutex<Server>>,
-        lines: Framed<TcpStream, LinesCodec>,
+        server: Arc<Mutex<Server>>,
+        stream: TcpStream,
     ) -> anyhow::Result<Client> {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        state.lock().await.clients.insert(addr, tx);
+        server.lock().await.clients.insert(addr, tx);
 
-        Ok(Client { addr, lines, rx })
+        let (reader, writer) = split(stream);
+
+        let req = FramedRead::new(reader, Request::default());
+        let res = FramedWrite::new(writer, Response::default());
+
+        Ok(Client { addr, req, res, rx })
     }
 }
 
-async fn process(
-    state: Arc<Mutex<Server>>,
+async fn handle_client(
+    server: Arc<Mutex<Server>>,
     stream: TcpStream,
     addr: SocketAddr,
 ) -> anyhow::Result<()> {
-    let lines = Framed::new(stream, LinesCodec::new());
-
-    let mut client = Client::new(addr, state.clone(), lines).await?;
+    let mut client = Client::new(addr, server.clone(), stream).await?;
 
     {
-        let mut state = state.lock().await;
-        state
+        client
+            .res
+            .send(ResponseBuilder::new(RES_WELCOME, format!("Welcome to wangerz!")).build())
+            .await?;
+
+        let mut server = server.lock().await;
+        client
+            .res
+            .send(ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone()).build())
+            .await?;
+        server
             .broadcast_others(Message::ClientConnected(addr), addr)
             .await;
     }
 
     loop {
         tokio::select! {
+            result = client.req.next() => match result {
+                Some(Ok(req)) => {
+                        println!("{req:?}");
+                    }
+                _ => break
+            },
             Some(msg) = client.rx.recv() => {
                 match msg {
                     Message::ClientConnected(addr) => {
-                        client.lines.send(format!("{addr} has joined the chat.")).await?;
+                        client.res.send(ResponseBuilder::new(RES_HELLO, format!("{addr} has joined")).build()).await?;
                     }
                     Message::ClientDisconnected(addr) => {
-                        client.lines.send(format!("{addr} has left the chat.")).await?;
+                        println!("INFO: Client {addr} disconnected");
+                        client.res.send(ResponseBuilder::new(RES_GOODBYE, format!("{addr} has left the channel")).build()).await?;
                     }
                     Message::Sent { message, .. } => {
-                        client.lines.send(&message).await?
+                        // let res = ResponseBuilder::new(RES_HELLO, format!("{message} has joined")).build();
+                        // client.res.send(res).await.unwrap();
                     }
                 }
             }
-            result = client.lines.next() => match result {
-                Some(Ok(msg)) => {
-                    let mut state = state.lock().await;
-                    let msg = format!("{}: {}", addr, msg);
-
-                    state.broadcast_all(Message::Sent { from: addr, message: msg }).await;
-                }
-                Some(Err(e)) => {
-                    eprintln!("ERROR: {e}");
-                }
-                None => break,
-            },
         }
     }
 
     {
-        let mut state = state.lock().await;
-        state.clients.remove(&addr);
+        let mut server = server.lock().await;
+        server.clients.remove(&addr);
 
-        state
+        server
             .broadcast_others(Message::ClientDisconnected(addr), addr)
             .await;
     }
@@ -126,7 +141,7 @@ async fn process(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let state = Arc::new(Mutex::new(Server::new()));
+    let server = Arc::new(Mutex::new(Server::new()));
     const HOST: &str = "0.0.0.0";
     const PORT: i32 = 7878;
 
@@ -138,10 +153,10 @@ async fn main() -> anyhow::Result<()> {
     loop {
         let (stream, addr) = listener.accept().await?;
 
-        let state = Arc::clone(&state);
+        let server = Arc::clone(&server);
 
         tokio::spawn(async move {
-            if let Err(e) = process(state, stream, addr).await {
+            if let Err(e) = handle_client(server, stream, addr).await {
                 eprintln!("ERROR: {e}")
             }
         });
