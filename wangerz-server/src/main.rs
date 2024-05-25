@@ -10,7 +10,9 @@ use tokio_util::codec::{FramedRead, FramedWrite};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use wangerz_protocol::code::{RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_WELCOME};
+use wangerz_protocol::code::{
+    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_WELCOME,
+};
 use wangerz_protocol::request::Request;
 use wangerz_protocol::response::{Response, ResponseBuilder};
 
@@ -22,6 +24,16 @@ macro_rules! respond {
         $client
             .res
             .send(ResponseBuilder::new($code, $msg).build())
+            .await?;
+    };
+    ($client:ident, $code: ident, $msg: expr, $origin :expr) => {
+        $client
+            .res
+            .send(
+                ResponseBuilder::new($code, $msg)
+                    .with_origin($origin)
+                    .build(),
+            )
             .await?;
     };
 }
@@ -95,7 +107,7 @@ async fn handle_client(
     let mut client = Client::new(addr, server.clone(), stream).await?;
 
     {
-        respond!(client, RES_GOODBYE, "Welcome to wangerz!".to_owned());
+        respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
 
         let mut server = server.lock().await;
         respond!(client, RES_TOPIC_CHANGE, server.topic.clone());
@@ -108,8 +120,11 @@ async fn handle_client(
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
-                        println!("req: {req:?}");
-                    }
+                    let mut server = server.lock().await;
+                    server
+                        .broadcast_all(Message::Sent{from: addr, message: req.message})
+                        .await;
+                }
                 _ => break
             },
             Some(msg) = client.rx.recv() => {
@@ -121,9 +136,9 @@ async fn handle_client(
                         println!("INFO: Client {addr} disconnected");
                         respond!(client, RES_GOODBYE, format!("{addr} has left the channel"));
                     }
-                    Message::Sent { message, .. } => {
-                        // let res = ResponseBuilder::new(RES_HELLO, format!("{message} has joined")).build();
-                        // client.res.send(res).await.unwrap();
+                    Message::Sent { message, from, .. } => {
+                        println!("INFO: Client {from} sent message: {message:?}");
+                        respond!(client, RES_CHAT_MESSAGE_OK, message, format!("{from}"));
                     }
                 }
             }

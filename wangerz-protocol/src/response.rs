@@ -2,7 +2,7 @@ use std::{io::Write, net::TcpStream, sync::Arc};
 
 use anyhow::Context;
 use tokio_util::{
-    bytes::{Buf, BufMut},
+    bytes::BufMut,
     codec::{Decoder, Encoder},
 };
 
@@ -158,12 +158,17 @@ impl Decoder for Response {
         src: &mut tokio_util::bytes::BytesMut,
     ) -> anyhow::Result<Option<Response>> {
         if let Some(pos) = src.windows(2).position(|w| w == b"\r\n") {
-            let mut buf = src.split_to(pos).freeze();
-            let version = buf.get_u8();
-            let request_id = buf.get_u32();
-            let timestamp = buf.get_u64();
-            let code = buf.get_u16();
-            let origin_length = buf.get_u8();
+            let mut buf = src.split_to(pos + 2).freeze();
+            buf.truncate(pos);
+
+            let version = buf[0];
+            // @CLEANUP: Assumption of big-endian byte order
+            let request_id = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
+            let timestamp = u64::from_be_bytes([
+                buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11], buf[12],
+            ]);
+            let code = u16::from_be_bytes([buf[13], buf[14]]);
+            let origin_length = u8::from_be_bytes([buf[15]]);
             let origin_end = 16 + origin_length;
             let origin = String::from_utf8(buf[16..usize::from(origin_end)].to_vec())?;
             let message = String::from_utf8(buf[usize::from(origin_end)..].to_vec())?;
