@@ -17,6 +17,15 @@ use wangerz_protocol::response::{Response, ResponseBuilder};
 type Tx = mpsc::UnboundedSender<Message>;
 type Rx = mpsc::UnboundedReceiver<Message>;
 
+macro_rules! respond {
+    ($client:ident, $code: ident, $msg: expr) => {
+        $client
+            .res
+            .send(ResponseBuilder::new($code, $msg).build())
+            .await?;
+    };
+}
+
 #[derive(Clone, Debug)]
 enum Message {
     ClientConnected(SocketAddr),
@@ -86,16 +95,10 @@ async fn handle_client(
     let mut client = Client::new(addr, server.clone(), stream).await?;
 
     {
-        client
-            .res
-            .send(ResponseBuilder::new(RES_WELCOME, format!("Welcome to wangerz!")).build())
-            .await?;
+        respond!(client, RES_GOODBYE, "Welcome to wangerz!".to_owned());
 
         let mut server = server.lock().await;
-        client
-            .res
-            .send(ResponseBuilder::new(RES_TOPIC_CHANGE, server.topic.clone()).build())
-            .await?;
+        respond!(client, RES_TOPIC_CHANGE, server.topic.clone());
         server
             .broadcast_others(Message::ClientConnected(addr), addr)
             .await;
@@ -105,7 +108,7 @@ async fn handle_client(
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
-                        println!("{req:?}");
+                        println!("req: {req:?}");
                     }
                 _ => break
             },
@@ -116,7 +119,7 @@ async fn handle_client(
                     }
                     Message::ClientDisconnected(addr) => {
                         println!("INFO: Client {addr} disconnected");
-                        client.res.send(ResponseBuilder::new(RES_GOODBYE, format!("{addr} has left the channel")).build()).await?;
+                        respond!(client, RES_GOODBYE, format!("{addr} has left the channel"));
                     }
                     Message::Sent { message, .. } => {
                         // let res = ResponseBuilder::new(RES_HELLO, format!("{message} has joined")).build();
