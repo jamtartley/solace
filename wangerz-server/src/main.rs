@@ -10,14 +10,21 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-type Tx = mpsc::UnboundedSender<String>;
-type Rx = mpsc::UnboundedReceiver<String>;
+type Tx = mpsc::UnboundedSender<Message>;
+type Rx = mpsc::UnboundedReceiver<Message>;
 
-struct Server {
-    peers: HashMap<SocketAddr, Tx>,
+#[derive(Clone, Debug)]
+enum Message {
+    ClientConnected(SocketAddr),
+    ClientDisconnected(SocketAddr),
+    Sent { from: SocketAddr, message: String },
 }
 
-struct Peer {
+struct Server {
+    clients: HashMap<SocketAddr, Tx>,
+}
+
+struct Client {
     addr: SocketAddr,
     lines: Framed<TcpStream, LinesCodec>,
     rx: Rx,
@@ -26,36 +33,36 @@ struct Peer {
 impl Server {
     fn new() -> Self {
         Server {
-            peers: HashMap::new(),
+            clients: HashMap::new(),
         }
     }
 
-    async fn broadcast_all(&mut self, message: &str) {
-        for peer in self.peers.iter_mut() {
-            let _ = peer.1.send(message.into());
+    async fn broadcast_all(&mut self, message: Message) {
+        for client in self.clients.iter_mut() {
+            let _ = client.1.send(message.clone());
         }
     }
 
-    async fn broadcast_others(&mut self, sender: SocketAddr, message: &str) {
-        for peer in self.peers.iter_mut() {
-            if *peer.0 != sender {
-                let _ = peer.1.send(message.into());
+    async fn broadcast_others(&mut self, message: Message, sender: SocketAddr) {
+        for client in self.clients.iter_mut() {
+            if *client.0 != sender {
+                let _ = client.1.send(message.clone());
             }
         }
     }
 }
 
-impl Peer {
+impl Client {
     async fn new(
         addr: SocketAddr,
         state: Arc<Mutex<Server>>,
         lines: Framed<TcpStream, LinesCodec>,
-    ) -> anyhow::Result<Peer> {
+    ) -> anyhow::Result<Client> {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        state.lock().await.peers.insert(addr, tx);
+        state.lock().await.clients.insert(addr, tx);
 
-        Ok(Peer { addr, lines, rx })
+        Ok(Client { addr, lines, rx })
     }
 }
 
@@ -66,25 +73,36 @@ async fn process(
 ) -> anyhow::Result<()> {
     let lines = Framed::new(stream, LinesCodec::new());
 
-    let mut peer = Peer::new(addr, state.clone(), lines).await?;
+    let mut client = Client::new(addr, state.clone(), lines).await?;
 
     {
         let mut state = state.lock().await;
-        let msg = format!("{addr} has joined the chat");
-        state.broadcast_others(addr, &msg).await;
+        state
+            .broadcast_others(Message::ClientConnected(addr), addr)
+            .await;
     }
 
     loop {
         tokio::select! {
-            Some(msg) = peer.rx.recv() => {
-                peer.lines.send(&msg).await?;
+            Some(msg) = client.rx.recv() => {
+                match msg {
+                    Message::ClientConnected(addr) => {
+                        client.lines.send(format!("{addr} has joined the chat.")).await?;
+                    }
+                    Message::ClientDisconnected(addr) => {
+                        client.lines.send(format!("{addr} has left the chat.")).await?;
+                    }
+                    Message::Sent { message, .. } => {
+                        client.lines.send(&message).await?
+                    }
+                }
             }
-            result = peer.lines.next() => match result {
+            result = client.lines.next() => match result {
                 Some(Ok(msg)) => {
                     let mut state = state.lock().await;
                     let msg = format!("{}: {}", addr, msg);
 
-                    state.broadcast_others(addr, &msg).await;
+                    state.broadcast_all(Message::Sent { from: addr, message: msg }).await;
                 }
                 Some(Err(e)) => {
                     eprintln!("ERROR: {e}");
@@ -96,10 +114,11 @@ async fn process(
 
     {
         let mut state = state.lock().await;
-        state.peers.remove(&addr);
+        state.clients.remove(&addr);
 
-        let msg = format!("{addr} has left the chat");
-        state.broadcast_others(addr, &msg).await;
+        state
+            .broadcast_others(Message::ClientDisconnected(addr), addr)
+            .await;
     }
 
     Ok(())
