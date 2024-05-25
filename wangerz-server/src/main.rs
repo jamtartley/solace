@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use futures::sink::SinkExt;
+use rand::Rng;
 use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
@@ -11,7 +12,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_WELCOME,
+    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_WELCOME, RES_YOUR_NICK,
 };
 use wangerz_protocol::request::Request;
 use wangerz_protocol::response::{Response, ResponseBuilder};
@@ -40,9 +41,9 @@ macro_rules! respond {
 
 #[derive(Clone, Debug)]
 enum Message {
-    ClientConnected(SocketAddr),
-    ClientDisconnected(SocketAddr),
-    Sent { from: SocketAddr, message: String },
+    ClientConnected(String),
+    ClientDisconnected(String),
+    Sent { from: String, message: String },
 }
 
 struct Server {
@@ -52,9 +53,11 @@ struct Server {
 
 struct Client {
     addr: SocketAddr,
+    nick: String,
     req: FramedRead<ReadHalf<TcpStream>, Request>,
     res: FramedWrite<WriteHalf<TcpStream>, Response>,
     rx: Rx,
+    tx: Tx,
 }
 
 impl Server {
@@ -66,15 +69,15 @@ impl Server {
     }
 
     async fn broadcast_all(&mut self, message: Message) {
-        for client in self.clients.iter_mut() {
-            let _ = client.1.send(message.clone());
+        for tx in self.clients.values_mut() {
+            let _ = tx.send(message.clone());
         }
     }
 
     async fn broadcast_others(&mut self, message: Message, sender: SocketAddr) {
-        for client in self.clients.iter_mut() {
-            if *client.0 != sender {
-                let _ = client.1.send(message.clone());
+        for (addr, tx) in self.clients.iter_mut() {
+            if *addr != sender {
+                let _ = tx.send(message.clone());
             }
         }
     }
@@ -83,19 +86,38 @@ impl Server {
 impl Client {
     async fn new(
         addr: SocketAddr,
-        server: Arc<Mutex<Server>>,
         stream: TcpStream,
+        server: Arc<Mutex<Server>>,
     ) -> anyhow::Result<Client> {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        server.lock().await.clients.insert(addr, tx);
+        server.clone().lock().await.clients.insert(addr, tx.clone());
 
         let (reader, writer) = split(stream);
 
+        let nick = Self::generate_nick();
         let req = FramedRead::new(reader, Request::default());
         let res = FramedWrite::new(writer, Response::default());
 
-        Ok(Client { addr, req, res, rx })
+        Ok(Client {
+            addr,
+            nick,
+            req,
+            res,
+            rx,
+            tx,
+        })
+    }
+
+    fn generate_nick() -> String {
+        let len = 16;
+        let mut bytes = vec![0; len];
+
+        for byte in bytes.iter_mut().take(len) {
+            *byte = rand::thread_rng().gen_range(65..91);
+        }
+
+        String::from_utf8(bytes).unwrap()
     }
 }
 
@@ -104,15 +126,20 @@ async fn handle_client(
     stream: TcpStream,
     addr: SocketAddr,
 ) -> anyhow::Result<()> {
-    let mut client = Client::new(addr, server.clone(), stream).await?;
+    let mut client = Client::new(addr, stream, server.clone()).await?;
 
     {
         respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
+        respond!(
+            client,
+            RES_YOUR_NICK,
+            format!("Your nick is {}", client.nick.clone())
+        );
 
         let mut server = server.lock().await;
         respond!(client, RES_TOPIC_CHANGE, server.topic.clone());
         server
-            .broadcast_others(Message::ClientConnected(addr), addr)
+            .broadcast_others(Message::ClientConnected(client.nick.clone()), addr)
             .await;
     }
 
@@ -122,19 +149,20 @@ async fn handle_client(
                 Some(Ok(req)) => {
                     let mut server = server.lock().await;
                     server
-                        .broadcast_all(Message::Sent{from: addr, message: req.message})
+                        .broadcast_all(Message::Sent{from: client.nick.clone(), message: req.message})
                         .await;
                 }
                 _ => break
             },
             Some(msg) = client.rx.recv() => {
                 match msg {
-                    Message::ClientConnected(addr) => {
-                        client.res.send(ResponseBuilder::new(RES_HELLO, format!("{addr} has joined")).build()).await?;
+                    Message::ClientConnected(nick) => {
+                        println!("INFO: Client {nick} disconnected");
+                        respond!(client, RES_HELLO, format!("{nick} has joined"));
                     }
-                    Message::ClientDisconnected(addr) => {
-                        println!("INFO: Client {addr} disconnected");
-                        respond!(client, RES_GOODBYE, format!("{addr} has left the channel"));
+                    Message::ClientDisconnected(nick) => {
+                        println!("INFO: Client {nick} disconnected");
+                        respond!(client, RES_GOODBYE, format!("{nick} has left the channel"));
                     }
                     Message::Sent { message, from, .. } => {
                         println!("INFO: Client {from} sent message: {message:?}");
@@ -150,7 +178,7 @@ async fn handle_client(
         server.clients.remove(&addr);
 
         server
-            .broadcast_others(Message::ClientDisconnected(addr), addr)
+            .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
             .await;
     }
 
@@ -159,18 +187,17 @@ async fn handle_client(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let server = Arc::new(Mutex::new(Server::new()));
     const HOST: &str = "0.0.0.0";
     const PORT: i32 = 7878;
 
     let addr = format!("{HOST}:{PORT}");
     let listener = TcpListener::bind(&addr).await?;
+    let server = Arc::new(Mutex::new(Server::new()));
 
     println!("INFO: Server listening on {PORT}");
 
     loop {
         let (stream, addr) = listener.accept().await?;
-
         let server = Arc::clone(&server);
 
         tokio::spawn(async move {
