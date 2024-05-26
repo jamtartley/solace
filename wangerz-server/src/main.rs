@@ -12,8 +12,9 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE, RES_NICK_LIST,
-    RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_YOUR_NICK,
+    ERR_WHO_IS, RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
+    RES_NICK_LIST, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_WHO_IS,
+    RES_YOUR_NICK,
 };
 use wangerz_protocol::request::Request;
 use wangerz_protocol::response::{Response, ResponseBuilder};
@@ -62,6 +63,10 @@ enum Message {
         from: MessageClient,
         new_nick: String,
     },
+    Whois {
+        addr: Option<SocketAddr>,
+        nick: String,
+    },
 }
 
 struct Server {
@@ -104,6 +109,12 @@ impl Server {
                 let _ = tx.send(message.clone());
             }
         }
+    }
+
+    fn get_by_nick(&self, nick: &str) -> Option<&SocketAddr> {
+        self.clients
+            .iter()
+            .find_map(|(k, v)| if v.0 == nick { Some(k) } else { None })
     }
 }
 
@@ -161,7 +172,7 @@ async fn handle_client(
         respond!(
             client,
             RES_COMMAND_LIST,
-            ["ping", "nick", "topic"].join(" ")
+            ["ping", "nick", "topic", "whois"].join(" ")
         );
         respond!(
             client,
@@ -230,6 +241,12 @@ async fn handle_client(
                                 new_nick: nick.clone(),
                             })
                         .await;
+                    } else if  req.message.starts_with("/whois"){
+                        let target = req.message.replace("/whois", "").trim().to_owned();
+                        let mut server = server.lock().await;
+
+                        let maybe_addr = server.get_by_nick(&target).copied();
+                        server.broadcast_to(Message::Whois { addr: maybe_addr, nick: target }, addr).await;
                     } else {
                         let mut server = server.lock().await;
                         server
@@ -295,6 +312,13 @@ async fn handle_client(
                                 .collect::<Vec<String>>()
                                 .join(" ")
                         );
+                    }
+                    Message::Whois { addr, nick } => {
+                        if let Some(addr) = addr {
+                            respond!(client, RES_WHO_IS, format!("{nick} is: {addr}"));
+                        } else {
+                            respond!(client, ERR_WHO_IS, format!("User {nick} not found in this channel"));
+                        }
                     }
                 }
             }

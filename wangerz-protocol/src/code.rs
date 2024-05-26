@@ -12,7 +12,9 @@ pub const RES_TOPIC_CHANGE: u16 = 202;
 pub const RES_TOPIC_CHANGE_MESSAGE: u16 = 203;
 pub const RES_COMMAND_LIST: u16 = 204;
 pub const RES_NICK_LIST: u16 = 205;
+pub const RES_WHO_IS: u16 = 206;
 
 pub const ERR_COMMAND_NOT_FOUND: u16 = 300;
 pub const ERR_INVALID_ARGUMENT: u16 = 301;
 pub const ERR_NICK_IN_USE: u16 = 302;
+pub const ERR_WHO_IS: u16 = 303;
