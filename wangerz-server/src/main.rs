@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_WELCOME, RES_YOUR_NICK,
+    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE,
+    RES_WELCOME, RES_YOUR_NICK,
 };
 use wangerz_protocol::request::Request;
 use wangerz_protocol::response::{Response, ResponseBuilder};
@@ -44,6 +45,7 @@ enum Message {
     ClientConnected(String),
     ClientDisconnected(String),
     Sent { from: String, message: String },
+    TopicChanged(String),
 }
 
 struct Server {
@@ -65,6 +67,12 @@ impl Server {
         Server {
             clients: HashMap::new(),
             topic: "[No topic]".to_owned(),
+        }
+    }
+
+    async fn broadcast_to(&mut self, message: Message, to: SocketAddr) {
+        if let Some(tx) = self.clients.get(&to) {
+            let _ = tx.send(message.clone());
         }
     }
 
@@ -147,10 +155,19 @@ async fn handle_client(
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
-                    let mut server = server.lock().await;
-                    server
-                        .broadcast_all(Message::Sent{from: client.nick.clone(), message: req.message})
-                        .await;
+                    if req.message.starts_with("/topic")  {
+                        let topic= req.message.replace("/topic", "");
+                        let mut server = server.lock().await;
+
+                        server.topic = topic.clone();
+                        server.broadcast_to(Message::Sent{from : client.nick.clone(), message: req.message.clone()}, addr).await;
+                        server.broadcast_all(Message::TopicChanged(topic.clone())).await;
+                    } else {
+                        let mut server = server.lock().await;
+                        server
+                            .broadcast_all(Message::Sent{from: client.nick.clone(), message: req.message})
+                            .await;
+                    }
                 }
                 _ => break
             },
@@ -168,6 +185,9 @@ async fn handle_client(
                         println!("INFO: Client {from} sent message: {message:?}");
                         respond!(client, RES_CHAT_MESSAGE_OK, message, format!("{from}"));
                     }
+                    Message::TopicChanged(topic) => {
+                        respond!(client, RES_TOPIC_CHANGE, topic.clone());
+                        respond!(client, RES_TOPIC_CHANGE_MESSAGE, format!("Channel topic was changed to: {}", topic.clone()));}
                 }
             }
         }
