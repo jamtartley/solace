@@ -4,6 +4,7 @@ use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
 #[derive(Debug)]
 pub(crate) struct Prompt {
+    pub(crate) commands: Vec<String>,
     pub(crate) nick: String,
     pub(crate) pos: usize,
     command_buffer: Vec<char>,
@@ -17,6 +18,7 @@ impl Prompt {
     pub(crate) fn new() -> Self {
         Self {
             command_buffer: vec![],
+            commands: vec![],
             curr: vec![],
             history: vec![],
             history_offset: 0,
@@ -84,6 +86,7 @@ impl Prompt {
             event::KeyCode::Backspace => self.remove(),
             event::KeyCode::Up => self.fetch_previous(),
             event::KeyCode::Down => self.fetch_next(),
+            event::KeyCode::Tab => self.attempt_autocomplete(),
             _ => (),
         }
     }
@@ -219,6 +222,37 @@ impl Prompt {
         }
 
         None
+    }
+
+    fn attempt_autocomplete(&mut self) {
+        if self.commands.is_empty() {
+            return;
+        }
+
+        if let Some(first) = self.curr.first() {
+            if *first != '/' {
+                return;
+            }
+
+            if self.curr.len() == 1 {
+                return;
+            }
+
+            if self.curr.iter().any(|c| c.is_whitespace()) {
+                return;
+            }
+
+            let current_command = self.curr.iter().skip(1).collect::<String>();
+
+            for command in self.commands.iter() {
+                if command.starts_with(&current_command) {
+                    self.curr = format!("/{} ", command).chars().collect();
+                    self.pos = self.curr.len();
+
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -500,5 +534,67 @@ mod tests {
         let mut prompt = Prompt::new();
         prompt.nick = "user".to_string();
         assert_eq!(prompt.nick_display(), "[user] ");
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_does_nothing_without_commands() {
+        let mut prompt = Prompt::new();
+        prompt.curr = vec!['/'];
+        prompt.attempt_autocomplete();
+        assert_eq!(prompt.curr, vec!['/']);
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_does_nothing_if_not_only_slash() {
+        let mut prompt = Prompt::new();
+        prompt.commands = vec!["topic".to_string()];
+        prompt.curr = vec!['c', 'o'];
+        prompt.attempt_autocomplete();
+        assert_eq!(prompt.curr, vec!['c', 'o']);
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_does_nothing_if_only_slash() {
+        let mut prompt = Prompt::new();
+        prompt.commands = vec!["help".to_string()];
+        prompt.curr = vec!['/'];
+        prompt.attempt_autocomplete();
+        assert_eq!(prompt.curr, vec!['/']);
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_does_nothing_with_whitespace() {
+        let mut prompt = Prompt::new();
+        prompt.commands = vec!["help".to_string()];
+        prompt.curr = vec!['/', 'h', 'e', ' '];
+        prompt.attempt_autocomplete();
+        assert_eq!(prompt.curr, vec!['/', 'h', 'e', ' ']);
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_successful() {
+        let mut prompt = Prompt::new();
+        prompt.commands = vec!["help".to_string()];
+        prompt.curr = vec!['/', 'h', 'e'];
+        prompt.attempt_autocomplete();
+        assert_eq!(prompt.curr, vec!['/', 'h', 'e', 'l', 'p', ' ']);
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_no_match() {
+        let mut prompt = Prompt::new();
+        prompt.commands = vec!["help".to_string()];
+        prompt.curr = vec!['/', 'x', 'y', 'z'];
+        prompt.attempt_autocomplete();
+        assert_eq!(prompt.curr, vec!['/', 'x', 'y', 'z']);
+    }
+
+    #[test]
+    fn test_attempt_autocomplete_multiple_matches_picks_first() {
+        let mut prompt = Prompt::new();
+        prompt.commands = vec!["help".to_string(), "hello".to_string()];
+        prompt.curr = vec!['/', 'h', 'e'];
+        prompt.attempt_autocomplete();
+        assert!(prompt.curr == vec!['/', 'h', 'e', 'l', 'p', ' ']);
     }
 }

@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE, RES_TOPIC_CHANGE,
-    RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_YOUR_NICK,
+    RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
+    RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_YOUR_NICK,
 };
 use wangerz_protocol::request::Request;
 use wangerz_protocol::response::{Response, ResponseBuilder};
@@ -156,6 +156,11 @@ async fn handle_client(
             .broadcast_others(Message::ClientConnected(client.nick.clone()), addr)
             .await;
         respond!(client, RES_TOPIC_CHANGE, server.topic.clone());
+        respond!(
+            client,
+            RES_COMMAND_LIST,
+            ["ping", "nick", "topic"].join(" ")
+        );
     }
 
     loop {
