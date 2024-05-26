@@ -6,7 +6,7 @@ use std::{
 use crossterm::style;
 use wangerz_message_parser::{parse, Ast, AstNode};
 use wangerz_protocol::{
-    code::{RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
+    code::{RES_ACK_MESSAGE, RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
     request::{Request, RequestMessage},
     response::Response,
 };
@@ -35,15 +35,23 @@ impl ChatHistoryPart {
     }
 }
 
+/// # Fields
+///
+/// - `id`: An optional `u32` representing a unique identifier for the message.
+///    Will only be set on outbound messages and is used to reconcile with acks
+///    from the server to show in the UI that the message is pending/sent.
+///    `is_confirmed`: Has the server acked the message sent with this `id`?
 #[derive(Debug)]
 struct ChatHistoryEntry {
     author: Option<String>,
+    id: Option<u32>,
+    is_confirmed: bool,
     parts: Vec<ChatHistoryPart>,
     timestamp: String,
 }
 
 impl ChatHistoryEntry {
-    fn new(ast: Ast, author: Option<String>, timestamp: String) -> Self {
+    fn new(ast: Ast, author: Option<String>, timestamp: String, id: Option<u32>) -> Self {
         let mut parts = Self::prefix(timestamp.clone(), author.clone());
         parts.extend(
             ast.nodes
@@ -54,6 +62,8 @@ impl ChatHistoryEntry {
 
         Self {
             author,
+            id,
+            is_confirmed: false,
             timestamp,
             parts,
         }
@@ -73,6 +83,8 @@ impl ChatHistoryEntry {
 
         Self {
             author: None,
+            id: None,
+            is_confirmed: true,
             parts,
             timestamp,
         }
@@ -209,8 +221,19 @@ impl Renderable for ChatHistory {
                     }
 
                     let y = rect.y + rect.height - 1 - i as u16;
+                    let bg = if !entry.is_confirmed && entry.id.is_some() {
+                        // @TODO: Generate unconfirmed colors
+                        style::Color::Reset
+                    } else {
+                        part.1.bg
+                    };
+                    let fg = if !entry.is_confirmed && entry.id.is_some() {
+                        style::Color::Black
+                    } else {
+                        part.1.fg
+                    };
 
-                    buf.put_at(x, y, ch, part.1.bg, part.1.fg, part.1.attr);
+                    buf.put_at(x, y, ch, bg, fg, part.1.attr);
 
                     x += 1;
                 }
@@ -228,7 +251,7 @@ impl ChatHistory {
         self.entries.push(ChatHistoryEntry::error(msg));
     }
 
-    fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
+    fn message(&mut self, msg: &str, timestamp: &str, origin: &str, id: Option<u32>) {
         let parsed = wangerz_message_parser::parse(msg);
         let entry = ChatHistoryEntry::new(
             parsed,
@@ -238,9 +261,16 @@ impl ChatHistory {
                 Some(origin.to_owned())
             },
             timestamp.to_owned(),
+            id,
         );
 
         self.entries.push(entry);
+    }
+
+    fn ack(&mut self, id: u32) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.id == Some(id)) {
+            entry.is_confirmed = true;
+        }
     }
 }
 
@@ -329,7 +359,12 @@ impl ChatWindow {
 
         if let Some(tcp_stream) = self.stream.as_mut() {
             if let Some(message) = message {
-                Request::new(message).write_to(tcp_stream)?;
+                let id = rand::random::<u32>();
+                let timestamp = chrono::Utc::now().format("%H:%M:%S").to_string();
+                Request::new(id, message).write_to(tcp_stream)?;
+
+                self.history
+                    .message(&to_send, &timestamp, &self.prompt.nick, Some(id));
             }
         }
 
@@ -381,7 +416,10 @@ impl ChatWindow {
 
                                 self.prompt.nicks = nicks;
                             }
-                            _ => self.history.message(&message, &timestamp, &origin),
+                            RES_ACK_MESSAGE => {
+                                self.history.ack(message.parse::<u32>()?);
+                            }
+                            _ => self.history.message(&message, &timestamp, &origin, None),
                         }
                     }
                 }

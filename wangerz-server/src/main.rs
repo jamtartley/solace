@@ -12,9 +12,9 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    ERR_WHO_IS, RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
-    RES_NICK_LIST, RES_PONG, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_WHO_IS,
-    RES_YOUR_NICK,
+    ERR_WHO_IS, RES_ACK_MESSAGE, RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO,
+    RES_NICK_CHANGE, RES_NICK_LIST, RES_PONG, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE,
+    RES_WELCOME, RES_WHO_IS, RES_YOUR_NICK,
 };
 use wangerz_protocol::request::{Request, RequestMessage};
 use wangerz_protocol::response::{Response, ResponseBuilder};
@@ -23,13 +23,13 @@ type Tx = mpsc::UnboundedSender<Message>;
 type Rx = mpsc::UnboundedReceiver<Message>;
 
 macro_rules! respond {
-    ($client:ident, $code: ident, $msg: expr) => {
+    ($client: expr, $code: ident, $msg: expr) => {
         $client
             .res
             .send(ResponseBuilder::new($code, $msg).build())
             .await?;
     };
-    ($client:ident, $code: ident, $msg: expr, $origin :expr) => {
+    ($client: expr, $code: ident, $msg: expr, $origin :expr) => {
         $client
             .res
             .send(
@@ -193,6 +193,10 @@ async fn handle_client(
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
+                    respond!(client, RES_ACK_MESSAGE, req.id.to_string());
+
+                    println!("INFO: Message received: {:?}", req.message);
+
                     match req.message {
                         RequestMessage::Ping => {
                             respond!(client, RES_PONG, "Pong".to_owned());
@@ -200,13 +204,13 @@ async fn handle_client(
                         RequestMessage::Message(message) => {
                             let mut server = server.lock().await;
                             server
-                                .broadcast_all(Message::Sent {
+                                .broadcast_others(Message::Sent {
                                     from: MessageClient {
                                         addr,
                                         nick: client.nick.clone(),
                                     },
                                     message
-                                })
+                                }, addr)
                                 .await;
                         }
                         RequestMessage::NewTopic(topic) => {
@@ -214,15 +218,6 @@ async fn handle_client(
                             let trimmed = topic.trim();
 
                             trimmed.clone_into(&mut server.topic);
-                            /* server.broadcast_to(
-                                Message::Sent {
-                                    from: MessageClient {
-                                        addr,
-                                        nick: client.nick.clone(),
-                                    },
-                                    message: req.message.clone()
-                                }, addr)
-                            .await; */
                             server
                                 .broadcast_all(
                                     Message::TopicChanged {
@@ -250,16 +245,6 @@ async fn handle_client(
                                     new_nick: trimmed.to_owned(),
                                 })
                             .await;
-                            /* server.broadcast_to(
-                                Message::Sent {
-                                    from: MessageClient {
-                                        addr,
-                                        nick: client.nick.clone(),
-                                    },
-                                    message: req.message.clone()
-                                },
-                                addr)
-                            .await; */
                         }
                         RequestMessage::Disconnect => {
                             // @TODO: Respond with message on disconnect?
@@ -269,6 +254,7 @@ async fn handle_client(
                                 .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
                                 .await;
                             println!("INFO: Client {} disconnected", client.nick.clone());
+                            break;
                         }
                         RequestMessage::WhoIs(target) => {
                             let mut server = server.lock().await;

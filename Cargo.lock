@@ -700,6 +700,7 @@ dependencies = [
  "chrono",
  "crossterm",
  "once_cell",
+ "rand",
  "serde",
  "toml",
  "wangerz-message-parser",
@@ -718,7 +719,6 @@ dependencies = [
  "anyhow",
  "bincode",
  "chrono",
- "rand",
  "serde",
  "tokio-util",
 ]

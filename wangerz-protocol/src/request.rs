@@ -37,10 +37,10 @@ pub enum RequestMessage {
 }
 
 impl Request {
-    pub fn new(message: RequestMessage) -> Self {
+    pub fn new(id: u32, message: RequestMessage) -> Self {
         Self {
             version: 1,
-            id: rand::random(),
+            id,
             message: message.clone(),
         }
     }
