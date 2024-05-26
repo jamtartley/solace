@@ -1,4 +1,4 @@
-use std::{io::Write, net::TcpStream};
+use std::io::Write;
 
 use anyhow::Context;
 use tokio_util::{
@@ -41,7 +41,7 @@ impl Request {
         bytes
     }
 
-    pub fn write_to(&self, stream: &mut TcpStream) -> anyhow::Result<()> {
+    pub fn write_to(&self, stream: &mut impl Write) -> anyhow::Result<()> {
         stream
             .write_all(&self.as_bytes())
             .context("ERROR: Failed to write to stream")

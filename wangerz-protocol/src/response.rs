@@ -1,4 +1,4 @@
-use std::{io::Write, net::TcpStream, sync::Arc};
+use std::io::Write;
 
 use anyhow::Context;
 use tokio_util::{
@@ -49,11 +49,8 @@ impl Response {
         bytes
     }
 
-    // @CLEANUP: Align signature with Request::write_to()
-    pub fn write_to(&self, stream: &Arc<TcpStream>) -> anyhow::Result<()> {
+    pub fn write_to(&self, stream: &mut impl Write) -> anyhow::Result<()> {
         stream
-            .clone()
-            .as_ref()
             .write_all(&self.as_bytes())
             .context("ERROR: Failed to write to stream")
     }
