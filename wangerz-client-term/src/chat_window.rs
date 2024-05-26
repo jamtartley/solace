@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::style;
-use wangerz_message_parser::{Ast, AstNode};
+use wangerz_message_parser::{parse, Ast, AstNode};
 use wangerz_protocol::{
     code::{RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
     request::{Request, RequestMessage},
@@ -301,8 +301,36 @@ impl ChatWindow {
     }
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
+        let ast = parse(&to_send);
+
+        let message = match ast.nodes.first() {
+            Some(AstNode::Command {
+                parsed_name, args, ..
+            }) => match parsed_name.as_str() {
+                "ping" => Some(RequestMessage::Ping),
+                "disconnect" => Some(RequestMessage::Disconnect),
+                "nick" => Some(RequestMessage::NewNick(match args.first() {
+                    Some(AstNode::Text { value, .. }) => value.to_owned(),
+                    _ => todo!(),
+                })),
+                "topic" => Some(RequestMessage::NewTopic(match args.first() {
+                    Some(AstNode::Text { value, .. }) => value.to_owned(),
+                    _ => todo!(),
+                })),
+                "whois" => Some(RequestMessage::WhoIs(match args.first() {
+                    Some(AstNode::Text { value, .. }) => value.to_owned(),
+                    _ => todo!(),
+                })),
+                _ => unimplemented!(),
+            },
+            Some(AstNode::Text { value, .. }) => Some(RequestMessage::Message(value.to_owned())),
+            _ => unimplemented!(),
+        };
+
         if let Some(tcp_stream) = self.stream.as_mut() {
-            Request::new(RequestMessage::Message(to_send)).write_to(tcp_stream)?;
+            if let Some(message) = message {
+                Request::new(message).write_to(tcp_stream)?;
+            }
         }
 
         Ok(())

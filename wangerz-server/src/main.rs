@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
     ERR_WHO_IS, RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
-    RES_NICK_LIST, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_WHO_IS,
+    RES_NICK_LIST, RES_PONG, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_WHO_IS,
     RES_YOUR_NICK,
 };
 use wangerz_protocol::request::{Request, RequestMessage};
@@ -63,7 +63,7 @@ enum Message {
         from: MessageClient,
         new_nick: String,
     },
-    Whois {
+    WhoIs {
         addr: Option<SocketAddr>,
         nick: String,
     },
@@ -194,87 +194,89 @@ async fn handle_client(
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
                     match req.message {
-                        RequestMessage::Ping => todo!(),
-                        RequestMessage::Message(msg) => println!("{msg}"),
-                        RequestMessage::NewTopic(_) => todo!(),
-                        RequestMessage::NewNick(_) => todo!(),
-                    }
-                    /* if req.message.starts_with("/disconnect") {
-                        // @TODO: Respond with message on disconnect?
-                        let mut server = server.lock().await;
-                        server.clients.remove(&addr);
-                        server
-                            .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
-                            .await;
-                        println!("INFO: Client {} disconnected", client.nick.clone());
-                    } else if req.message.starts_with("/topic")  {
-                        let topic = req.message.replace("/topic", "");
-                        let mut server = server.lock().await;
-
-                        server.topic.clone_from(&topic);
-                        server.broadcast_to(
-                            Message::Sent {
-                                from: MessageClient {
-                                    addr,
-                                    nick: client.nick.clone(),
-                                },
-                                message: req.message.clone()
-                            }, addr)
-                        .await;
-                        server
-                            .broadcast_all(
-                                Message::TopicChanged {
+                        RequestMessage::Ping => {
+                            respond!(client, RES_PONG, "Pong".to_owned());
+                        }
+                        RequestMessage::Message(message) => {
+                            let mut server = server.lock().await;
+                            server
+                                .broadcast_all(Message::Sent {
                                     from: MessageClient {
-                                        addr, nick: client.nick.clone(),
+                                        addr,
+                                        nick: client.nick.clone(),
                                     },
-                                    topic: topic.clone().trim().to_owned()
+                                    message
+                                })
+                                .await;
+                        }
+                        RequestMessage::NewTopic(topic) => {
+                            let mut server = server.lock().await;
+                            let trimmed = topic.trim();
+
+                            trimmed.clone_into(&mut server.topic);
+                            /* server.broadcast_to(
+                                Message::Sent {
+                                    from: MessageClient {
+                                        addr,
+                                        nick: client.nick.clone(),
+                                    },
+                                    message: req.message.clone()
+                                }, addr)
+                            .await; */
+                            server
+                                .broadcast_all(
+                                    Message::TopicChanged {
+                                        from: MessageClient {
+                                            addr, nick: client.nick.clone(),
+                                        },
+                                        topic: trimmed.to_owned()
+                                    })
+                                .await;
+                        }
+                        RequestMessage::NewNick(nick) => {
+                            let mut server = server.lock().await;
+                            let was = client.nick.clone();
+                            let trimmed = nick.trim();
+
+                            trimmed.clone_into(&mut client.nick);
+                            trimmed.clone_into(&mut server.clients.get_mut(&addr).unwrap().0);
+
+                            server.broadcast_all(
+                                Message::NickChanged {
+                                    from: MessageClient {
+                                        addr,
+                                        nick: was,
+                                    },
+                                    new_nick: trimmed.to_owned(),
                                 })
                             .await;
-                    } else if req.message.starts_with("/nick") {
-                        let nick = req.message.replace("/nick", "").trim().to_owned();
-                        let mut server = server.lock().await;
-                        let was = client.nick.clone();
-
-                        client.nick.clone_from(&nick);
-                        server.clients.get_mut(&addr).unwrap().0.clone_from(&client.nick);
-
-                        server.broadcast_to(
-                            Message::Sent {
-                                from: MessageClient {
-                                    addr,
-                                    nick: client.nick.clone(),
+                            /* server.broadcast_to(
+                                Message::Sent {
+                                    from: MessageClient {
+                                        addr,
+                                        nick: client.nick.clone(),
+                                    },
+                                    message: req.message.clone()
                                 },
-                                message: req.message.clone()
-                            },
-                            addr)
-                        .await;
-                        server.broadcast_all(
-                            Message::NickChanged {
-                                from: MessageClient {
-                                    addr,
-                                    nick: was,
-                                },
-                                new_nick: nick.clone(),
-                            })
-                        .await;
-                    } else if  req.message.starts_with("/whois"){
-                        let target = req.message.replace("/whois", "").trim().to_owned();
-                        let mut server = server.lock().await;
+                                addr)
+                            .await; */
+                        }
+                        RequestMessage::Disconnect => {
+                            // @TODO: Respond with message on disconnect?
+                            let mut server = server.lock().await;
+                            server.clients.remove(&addr);
+                            server
+                                .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
+                                .await;
+                            println!("INFO: Client {} disconnected", client.nick.clone());
+                        }
+                        RequestMessage::WhoIs(target) => {
+                            let mut server = server.lock().await;
 
-                        let maybe_addr = server.get_by_nick(&target).copied();
-                        server.broadcast_to(Message::Whois { addr: maybe_addr, nick: target }, addr).await;
-                    } else {
-                        let mut server = server.lock().await;
-                        server
-                            .broadcast_all(Message::Sent {
-                                from: MessageClient {
-                                    addr,
-                                    nick: client.nick.clone(),
-                                },
-                                message: req.message
-                            })
-                            .await;
-                    } */
+                            let maybe_addr = server.get_by_nick(&target).copied();
+                            server.broadcast_to(Message::WhoIs { addr: maybe_addr, nick: target }, addr).await;
+                        }
+                    }
                 }
                 None => break,
                 _ => break
@@ -327,7 +329,7 @@ async fn handle_client(
                                 .join(" ")
                         );
                     }
-                    Message::Whois { addr, nick } => {
+                    Message::WhoIs { addr, nick } => {
                         if let Some(addr) = addr {
                             respond!(client, RES_WHO_IS, format!("{nick} is: {addr}"));
                         } else {

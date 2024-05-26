@@ -17,7 +17,7 @@ use tokio_util::{
 ///
 /// - `version`: A `u8` representing the version of the request protocol.
 /// - `id`: A `u32` representing a unique identifier for the request.
-/// - `message`: A `ReqeustType` containing the message.
+/// - `message`: A `ReqeustMessage` containing the message.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
     pub version: u8,
@@ -32,6 +32,8 @@ pub enum RequestMessage {
     Message(String),
     NewTopic(String),
     NewNick(String),
+    WhoIs(String),
+    Disconnect,
 }
 
 impl Request {
