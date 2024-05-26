@@ -16,7 +16,7 @@ use wangerz_protocol::code::{
     RES_NICK_LIST, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_WHO_IS,
     RES_YOUR_NICK,
 };
-use wangerz_protocol::request::Request;
+use wangerz_protocol::request::{Request, RequestMessage};
 use wangerz_protocol::response::{Response, ResponseBuilder};
 
 type Tx = mpsc::UnboundedSender<Message>;
@@ -193,7 +193,13 @@ async fn handle_client(
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
-                    if req.message.starts_with("/disconnect") {
+                    match req.message {
+                        RequestMessage::Ping => todo!(),
+                        RequestMessage::Message(msg) => println!("{msg}"),
+                        RequestMessage::NewTopic(_) => todo!(),
+                        RequestMessage::NewNick(_) => todo!(),
+                    }
+                    /* if req.message.starts_with("/disconnect") {
                         // @TODO: Respond with message on disconnect?
                         let mut server = server.lock().await;
                         server.clients.remove(&addr);
@@ -268,7 +274,7 @@ async fn handle_client(
                                 message: req.message
                             })
                             .await;
-                    }
+                    } */
                 }
                 None => break,
                 _ => break

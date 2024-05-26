@@ -1,6 +1,8 @@
 use std::io::Write;
 
 use anyhow::Context;
+use bincode::{deserialize, serialize, Result};
+use serde::{Deserialize, Serialize};
 use tokio_util::{
     bytes::BufMut,
     codec::{Decoder, Encoder},
@@ -15,16 +17,25 @@ use tokio_util::{
 ///
 /// - `version`: A `u8` representing the version of the request protocol.
 /// - `id`: A `u32` representing a unique identifier for the request.
-/// - `message`: A `String` containing the message.
-#[derive(Debug, Default)]
+/// - `message`: A `ReqeustType` containing the message.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Request {
     pub version: u8,
     pub id: u32,
-    pub message: String,
+    pub message: RequestMessage,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub enum RequestMessage {
+    #[default]
+    Ping,
+    Message(String),
+    NewTopic(String),
+    NewNick(String),
 }
 
 impl Request {
-    pub fn new(message: String) -> Self {
+    pub fn new(message: RequestMessage) -> Self {
         Self {
             version: 1,
             id: rand::random(),
@@ -32,18 +43,20 @@ impl Request {
         }
     }
 
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![self.version];
-        bytes.extend(self.id.to_be_bytes());
-        bytes.extend(self.message.as_bytes());
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        let mut bytes = serialize(self)?;
         bytes.extend(b"\r\n");
 
-        bytes
+        Ok(bytes)
+    }
+
+    pub fn decode(encoded: &[u8]) -> Result<Request> {
+        deserialize(encoded)
     }
 
     pub fn write_to(&self, stream: &mut impl Write) -> anyhow::Result<()> {
         stream
-            .write_all(&self.as_bytes())
+            .write_all(&self.encode()?[..])
             .context("ERROR: Failed to write to stream")
     }
 }
@@ -61,15 +74,9 @@ impl Decoder for Request {
                 return Err(anyhow::anyhow!("ERROR: Request is too short"));
             }
 
-            let version = buf[0];
-            let id = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-            let message = String::from_utf8(buf[5..].to_vec())?;
+            let request = Request::decode(&buf[..])?;
 
-            return Ok(Some(Request {
-                version,
-                id,
-                message,
-            }));
+            return Ok(Some(request));
         }
 
         Ok(None)
@@ -84,7 +91,7 @@ impl Encoder<Request> for Request {
         item: Request,
         dst: &mut tokio_util::bytes::BytesMut,
     ) -> anyhow::Result<()> {
-        let bytes = item.as_bytes();
+        let bytes = item.encode()?;
         dst.reserve(bytes.len());
         dst.put(&bytes[..]);
 

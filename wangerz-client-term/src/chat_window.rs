@@ -7,7 +7,7 @@ use crossterm::style;
 use wangerz_message_parser::{Ast, AstNode};
 use wangerz_protocol::{
     code::{RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
-    request::Request,
+    request::{Request, RequestMessage},
     response::Response,
 };
 
@@ -302,7 +302,7 @@ impl ChatWindow {
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         if let Some(tcp_stream) = self.stream.as_mut() {
-            Request::new(to_send).write_to(tcp_stream)?;
+            Request::new(RequestMessage::Message(to_send)).write_to(tcp_stream)?;
         }
 
         Ok(())
