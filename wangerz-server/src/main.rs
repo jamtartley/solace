@@ -41,18 +41,26 @@ macro_rules! respond {
 }
 
 #[derive(Clone, Debug)]
+struct MessageClient {
+    addr: SocketAddr,
+    nick: String,
+}
+
+#[derive(Clone, Debug)]
 enum Message {
     ClientConnected(String),
     ClientDisconnected(String),
     Sent {
-        from: String,
+        from: MessageClient,
         message: String,
     },
-    TopicChanged(String),
+    TopicChanged {
+        from: MessageClient,
+        topic: String,
+    },
     NickChanged {
-        addr: SocketAddr,
-        was: String,
-        is: String,
+        from: MessageClient,
+        new_nick: String,
     },
 }
 
@@ -163,22 +171,61 @@ async fn handle_client(
                         let topic= req.message.replace("/topic", "");
                         let mut server = server.lock().await;
 
-                        server.topic = topic.clone();
-                        server.broadcast_to(Message::Sent{from : client.nick.clone(), message: req.message.clone()}, addr).await;
-                        server.broadcast_all(Message::TopicChanged(topic.clone())).await;
+                        server.topic.clone_from(&topic);
+                        server.broadcast_to(
+                            Message::Sent {
+                                from: MessageClient {
+                                    addr,
+                                    nick: client.nick.clone(),
+                                },
+                                message: req.message.clone()
+                            }, addr)
+                        .await;
+                        server
+                            .broadcast_all(
+                                Message::TopicChanged {
+                                    from: MessageClient {
+                                        addr, nick: client.nick.clone(),
+                                    },
+                                    topic: topic.clone().trim().to_owned()
+                                })
+                            .await;
                     } else if req.message.starts_with("/nick") {
-                        let nick= req.message.replace("/nick", "").trim().to_owned();
+                        let nick = req.message.replace("/nick", "").trim().to_owned();
                         let mut server = server.lock().await;
                         let was = client.nick.clone();
 
-                        client.nick = nick.clone();
+                        client.nick.clone_from(&nick);
 
-                        server.broadcast_to(Message::Sent{from : was.clone(), message: req.message.clone()}, addr).await;
-                        server.broadcast_all(Message::NickChanged{was, is:nick.clone(), addr}).await;
+                        server.broadcast_to(
+                            Message::Sent {
+                                from: MessageClient {
+                                    addr,
+                                    nick: client.nick.clone(),
+                                },
+                                message: req.message.clone()
+                            },
+                            addr)
+                        .await;
+                        server.broadcast_all(
+                            Message::NickChanged {
+                                from: MessageClient {
+                                    addr,
+                                    nick: was,
+                                },
+                                new_nick: nick.clone(),
+                            })
+                        .await;
                     } else {
                         let mut server = server.lock().await;
                         server
-                            .broadcast_all(Message::Sent{from: client.nick.clone(), message: req.message})
+                            .broadcast_all(Message::Sent {
+                                from: MessageClient {
+                                    addr,
+                                    nick: client.nick.clone(),
+                                },
+                                message: req.message
+                            })
                             .await;
                     }
                 }
@@ -196,18 +243,25 @@ async fn handle_client(
                         respond!(client, RES_GOODBYE, format!("{nick} has left the channel"));
                     }
                     Message::Sent { message, from, .. } => {
-                        println!("INFO: Client {from} sent message: {message:?}");
-                        respond!(client, RES_CHAT_MESSAGE_OK, message, format!("{from}"));
+                        println!("INFO: Client {} sent message: {message:?}", from.nick);
+                        respond!(client, RES_CHAT_MESSAGE_OK, message, format!("{}", from.nick));
                     }
-                    Message::TopicChanged(topic) => {
+                    Message::TopicChanged{ from, topic } => {
+                        println!("INFO: Topic was changed by {} to: {topic}", from.nick);
                         respond!(client, RES_TOPIC_CHANGE, topic.clone());
-                        respond!(client, RES_TOPIC_CHANGE_MESSAGE, format!("Channel topic was changed to: {}", topic.clone()));
-                    }
-                    Message::NickChanged{addr: from, was, is} => {
-                        let message = if addr == from {
-                            format!("You are now known as {is}")
+
+                        let message = if addr == from.addr {
+                            format!("You changed the channel topic to: {topic}")
                         } else {
-                            format!("{was} is now known as {is}")
+                            format!("{} changed the channel topic to: {}", from.nick, topic.clone())
+                        };
+                        respond!(client, RES_TOPIC_CHANGE_MESSAGE, message);
+                    }
+                    Message::NickChanged{from, new_nick} => {
+                        let message = if addr == from.addr {
+                            format!("You are now known as {new_nick}")
+                        } else {
+                            format!("{} is now known as {new_nick}", from.nick)
                         };
                         respond!(client, RES_NICK_CHANGE, message);
                     }
