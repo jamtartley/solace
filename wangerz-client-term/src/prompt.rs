@@ -1,6 +1,4 @@
-use std::io::{self, Write};
-
-use crossterm::{cursor, event, style, QueueableCommand};
+use crossterm::{cursor, event, style};
 
 use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
@@ -46,18 +44,14 @@ impl Prompt {
         self.curr.iter().collect::<String>()
     }
 
-    pub(crate) fn align_cursor(&self, stdout: &mut io::Stdout, y: u16) -> anyhow::Result<()> {
+    pub(crate) fn cursor_state(&self) -> (u16, cursor::SetCursorStyle) {
         let x = (self.nick_display().len() + self.pos) as u16;
+        let style = match self.mode {
+            Mode::Insert => cursor::SetCursorStyle::SteadyBar,
+            Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
+        };
 
-        stdout
-            .queue(cursor::MoveTo(x, y))?
-            .queue(match self.mode {
-                Mode::Insert => cursor::SetCursorStyle::SteadyBar,
-                Mode::Normal => cursor::SetCursorStyle::SteadyBlock,
-            })?
-            .flush()?;
-
-        Ok(())
+        (x, style)
     }
 
     fn nick_display(&self) -> String {
@@ -270,7 +264,6 @@ impl Renderable for Prompt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event;
 
     #[test]
     fn test_flush() {
@@ -375,6 +368,9 @@ mod tests {
         prompt.insert('a');
         assert_eq!(prompt.curr, vec!['a']);
         assert_eq!(prompt.pos, 1);
+        prompt.insert('b');
+        assert_eq!(prompt.curr, vec!['a', 'b']);
+        assert_eq!(prompt.pos, 2);
     }
 
     #[test]
@@ -490,5 +486,19 @@ mod tests {
         prompt.pos = 3;
         let index = prompt.find_previous_index(|c| c == 'b');
         assert_eq!(index, Some(1));
+    }
+
+    #[test]
+    fn test_nick_display_no_nick() {
+        let mut prompt = Prompt::new();
+        prompt.nick = String::default();
+        assert_eq!(prompt.nick_display(), "");
+    }
+
+    #[test]
+    fn test_nick_display_with_nick() {
+        let mut prompt = Prompt::new();
+        prompt.nick = "user".to_string();
+        assert_eq!(prompt.nick_display(), "[user] ");
     }
 }

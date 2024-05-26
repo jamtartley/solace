@@ -116,7 +116,9 @@ impl RenderBuffer {
             }
         }
     }
+}
 
+impl Flushable for RenderBuffer {
     fn render_to(&self, qc: &mut impl QueueableCommand) -> anyhow::Result<()> {
         qc.queue(cursor::MoveTo(0, 0))?;
 
@@ -152,7 +154,9 @@ impl CellPatch {
     fn new(cell: RenderCell, x: u16, y: u16) -> Self {
         Self { x, y, cell }
     }
+}
 
+impl Flushable for CellPatch {
     fn render_to(&self, qc: &mut impl QueueableCommand) -> anyhow::Result<()> {
         let RenderCell {
             bg,
@@ -184,6 +188,10 @@ struct Rect {
 
 trait Renderable {
     fn render_into(&self, buf: &mut RenderBuffer, rect: &Rect);
+}
+
+trait Flushable {
+    fn render_to(&self, qc: &mut impl QueueableCommand) -> anyhow::Result<()>;
 }
 
 #[derive(Debug)]
@@ -298,7 +306,11 @@ fn main() -> anyhow::Result<()> {
         }
 
         // @CLEANUP: assumption that prompt is in the last row
-        chat_window.prompt.align_cursor(&mut stdout, size.1)?;
+        let (x, cursor_style) = chat_window.prompt.cursor_state();
+        stdout
+            .queue(cursor::MoveTo(x, size.1))?
+            .queue(cursor_style)?
+            .flush()?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);
     }
