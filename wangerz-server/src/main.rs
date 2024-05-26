@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE,
-    RES_WELCOME, RES_YOUR_NICK,
+    RES_CHAT_MESSAGE_OK, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE, RES_TOPIC_CHANGE,
+    RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_YOUR_NICK,
 };
 use wangerz_protocol::request::Request;
 use wangerz_protocol::response::{Response, ResponseBuilder};
@@ -44,8 +44,16 @@ macro_rules! respond {
 enum Message {
     ClientConnected(String),
     ClientDisconnected(String),
-    Sent { from: String, message: String },
+    Sent {
+        from: String,
+        message: String,
+    },
     TopicChanged(String),
+    NickChanged {
+        addr: SocketAddr,
+        was: String,
+        is: String,
+    },
 }
 
 struct Server {
@@ -92,14 +100,8 @@ impl Server {
 }
 
 impl Client {
-    async fn new(
-        addr: SocketAddr,
-        stream: TcpStream,
-        server: Arc<Mutex<Server>>,
-    ) -> anyhow::Result<Client> {
+    async fn new(addr: SocketAddr, stream: TcpStream) -> anyhow::Result<Client> {
         let (tx, rx) = mpsc::unbounded_channel();
-
-        server.clone().lock().await.clients.insert(addr, tx.clone());
 
         let (reader, writer) = split(stream);
 
@@ -134,24 +136,26 @@ async fn handle_client(
     stream: TcpStream,
     addr: SocketAddr,
 ) -> anyhow::Result<()> {
-    let mut client = Client::new(addr, stream, server.clone()).await?;
+    let mut client = Client::new(addr, stream).await?;
+
+    respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
+    respond!(
+        client,
+        RES_YOUR_NICK,
+        format!("Your nick is {}", client.nick.clone())
+    );
 
     {
-        respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
-        respond!(
-            client,
-            RES_YOUR_NICK,
-            format!("Your nick is {}", client.nick.clone())
-        );
-
         let mut server = server.lock().await;
-        respond!(client, RES_TOPIC_CHANGE, server.topic.clone());
+        server.clients.insert(addr, client.tx);
         server
             .broadcast_others(Message::ClientConnected(client.nick.clone()), addr)
             .await;
+        respond!(client, RES_TOPIC_CHANGE, server.topic.clone());
     }
 
     loop {
+        #[rustfmt::skip]
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
@@ -162,6 +166,15 @@ async fn handle_client(
                         server.topic = topic.clone();
                         server.broadcast_to(Message::Sent{from : client.nick.clone(), message: req.message.clone()}, addr).await;
                         server.broadcast_all(Message::TopicChanged(topic.clone())).await;
+                    } else if req.message.starts_with("/nick") {
+                        let nick= req.message.replace("/nick", "").trim().to_owned();
+                        let mut server = server.lock().await;
+                        let was = client.nick.clone();
+
+                        client.nick = nick.clone();
+
+                        server.broadcast_to(Message::Sent{from : was.clone(), message: req.message.clone()}, addr).await;
+                        server.broadcast_all(Message::NickChanged{was, is:nick.clone(), addr}).await;
                     } else {
                         let mut server = server.lock().await;
                         server
@@ -169,6 +182,7 @@ async fn handle_client(
                             .await;
                     }
                 }
+                None => break,
                 _ => break
             },
             Some(msg) = client.rx.recv() => {
@@ -187,7 +201,16 @@ async fn handle_client(
                     }
                     Message::TopicChanged(topic) => {
                         respond!(client, RES_TOPIC_CHANGE, topic.clone());
-                        respond!(client, RES_TOPIC_CHANGE_MESSAGE, format!("Channel topic was changed to: {}", topic.clone()));}
+                        respond!(client, RES_TOPIC_CHANGE_MESSAGE, format!("Channel topic was changed to: {}", topic.clone()));
+                    }
+                    Message::NickChanged{addr: from, was, is} => {
+                        let message = if addr == from {
+                            format!("You are now known as {is}")
+                        } else {
+                            format!("{was} is now known as {is}")
+                        };
+                        respond!(client, RES_NICK_CHANGE, message);
+                    }
                 }
             }
         }
@@ -195,8 +218,8 @@ async fn handle_client(
 
     {
         let mut server = server.lock().await;
-        server.clients.remove(&addr);
 
+        server.clients.remove(&addr);
         server
             .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
             .await;
