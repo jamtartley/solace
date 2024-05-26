@@ -5,6 +5,7 @@ use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 #[derive(Debug)]
 pub(crate) struct Prompt {
     pub(crate) commands: Vec<String>,
+    pub(crate) nicks: Vec<String>,
     pub(crate) nick: String,
     pub(crate) pos: usize,
     command_buffer: Vec<char>,
@@ -19,6 +20,7 @@ impl Prompt {
         Self {
             command_buffer: vec![],
             commands: vec![],
+            nicks: vec![],
             curr: vec![],
             history: vec![],
             history_offset: 0,
@@ -225,14 +227,12 @@ impl Prompt {
     }
 
     fn attempt_autocomplete(&mut self) {
-        if self.commands.is_empty() {
-            return;
-        }
-
         if let Some(first) = self.curr.first() {
-            if *first != '/' {
-                return;
-            }
+            let searchable = match *first {
+                '/' => Some(&self.commands),
+                '@' => Some(&self.nicks),
+                _ => None,
+            };
 
             if self.curr.len() == 1 {
                 return;
@@ -242,14 +242,16 @@ impl Prompt {
                 return;
             }
 
-            let current_command = self.curr.iter().skip(1).collect::<String>();
+            if let Some(searchable) = searchable {
+                let to_search = self.curr.iter().skip(1).collect::<String>();
 
-            for command in self.commands.iter() {
-                if command.starts_with(&current_command) {
-                    self.curr = format!("/{} ", command).chars().collect();
-                    self.pos = self.curr.len();
+                for value in searchable {
+                    if value.starts_with(&to_search) {
+                        self.curr = format!("{}{} ", first, value).chars().collect();
+                        self.pos = self.curr.len();
 
-                    break;
+                        break;
+                    }
                 }
             }
         }

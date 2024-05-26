@@ -6,7 +6,7 @@ use std::{
 use crossterm::style;
 use wangerz_message_parser::{Ast, AstNode};
 use wangerz_protocol::{
-    code::{RES_COMMAND_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
+    code::{RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
     request::Request,
     response::Response,
 };
@@ -339,9 +339,19 @@ impl ChatWindow {
                                     .map(|x| x.to_owned())
                                     .collect::<Vec<String>>();
 
-                                commands.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                                commands.sort_by_key(|a| a.to_lowercase());
 
                                 self.prompt.commands = commands;
+                            }
+                            RES_NICK_LIST => {
+                                let mut nicks = message
+                                    .split(' ')
+                                    .map(|x| x.to_owned())
+                                    .collect::<Vec<String>>();
+
+                                nicks.sort_by_key(|a| a.to_lowercase());
+
+                                self.prompt.nicks = nicks;
                             }
                             _ => self.history.message(&message, &timestamp, &origin),
                         }

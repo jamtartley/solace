@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use wangerz_protocol::code::{
-    RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE,
+    RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO, RES_NICK_CHANGE, RES_NICK_LIST,
     RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE, RES_WELCOME, RES_YOUR_NICK,
 };
 use wangerz_protocol::request::Request;
@@ -65,7 +65,7 @@ enum Message {
 }
 
 struct Server {
-    clients: HashMap<SocketAddr, Tx>,
+    clients: HashMap<SocketAddr, (String, Tx)>,
     topic: String,
 }
 
@@ -87,19 +87,19 @@ impl Server {
     }
 
     async fn broadcast_to(&mut self, message: Message, to: SocketAddr) {
-        if let Some(tx) = self.clients.get(&to) {
+        if let Some((_, tx)) = self.clients.get(&to) {
             let _ = tx.send(message.clone());
         }
     }
 
     async fn broadcast_all(&mut self, message: Message) {
-        for tx in self.clients.values_mut() {
+        for (_, tx) in self.clients.values_mut() {
             let _ = tx.send(message.clone());
         }
     }
 
     async fn broadcast_others(&mut self, message: Message, sender: SocketAddr) {
-        for (addr, tx) in self.clients.iter_mut() {
+        for (addr, (_, tx)) in self.clients.iter_mut() {
             if *addr != sender {
                 let _ = tx.send(message.clone());
             }
@@ -151,7 +151,9 @@ async fn handle_client(
 
     {
         let mut server = server.lock().await;
-        server.clients.insert(addr, client.tx);
+        server
+            .clients
+            .insert(addr, (client.nick.clone(), client.tx));
         server
             .broadcast_others(Message::ClientConnected(client.nick.clone()), addr)
             .await;
@@ -160,6 +162,16 @@ async fn handle_client(
             client,
             RES_COMMAND_LIST,
             ["ping", "nick", "topic"].join(" ")
+        );
+        respond!(
+            client,
+            RES_NICK_LIST,
+            server
+                .clients
+                .values()
+                .map(|v| v.0.clone())
+                .collect::<Vec<String>>()
+                .join(" ")
         );
     }
 
@@ -197,6 +209,7 @@ async fn handle_client(
                         let was = client.nick.clone();
 
                         client.nick.clone_from(&nick);
+                        server.clients.get_mut(&addr).unwrap().0.clone_from(&client.nick);
 
                         server.broadcast_to(
                             Message::Sent {
@@ -270,6 +283,18 @@ async fn handle_client(
                         }
 
                         respond!(client, RES_NICK_CHANGE, message);
+
+                        let server = server.lock().await;
+                        respond!(
+                            client,
+                            RES_NICK_LIST,
+                            server
+                                .clients
+                                .values()
+                                .map(|v| v.0.clone())
+                                .collect::<Vec<String>>()
+                                .join(" ")
+                        );
                     }
                 }
             }
