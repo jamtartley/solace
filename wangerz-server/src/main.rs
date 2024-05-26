@@ -157,6 +157,8 @@ async fn handle_client(
 ) -> anyhow::Result<()> {
     let mut client = Client::new(addr, stream).await?;
 
+    println!("INFO: Client {} connected", client.nick.clone());
+
     respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
     respond!(client, RES_YOUR_NICK, client.nick.clone());
 
@@ -172,7 +174,7 @@ async fn handle_client(
         respond!(
             client,
             RES_COMMAND_LIST,
-            ["ping", "nick", "topic", "whois"].join(" ")
+            ["ping", "nick", "topic", "whois", "disconnect"].join(" ")
         );
         respond!(
             client,
@@ -191,7 +193,15 @@ async fn handle_client(
         tokio::select! {
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
-                    if req.message.starts_with("/topic")  {
+                    if req.message.starts_with("/disconnect") {
+                        // @TODO: Respond with message on disconnect?
+                        let mut server = server.lock().await;
+                        server.clients.remove(&addr);
+                        server
+                            .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
+                            .await;
+                        println!("INFO: Client {} disconnected", client.nick.clone());
+                    } else if req.message.starts_with("/topic")  {
                         let topic = req.message.replace("/topic", "");
                         let mut server = server.lock().await;
 
@@ -266,11 +276,9 @@ async fn handle_client(
             Some(msg) = client.rx.recv() => {
                 match msg {
                     Message::ClientConnected(nick) => {
-                        println!("INFO: Client {nick} disconnected");
                         respond!(client, RES_HELLO, format!("{nick} has joined"));
                     }
                     Message::ClientDisconnected(nick) => {
-                        println!("INFO: Client {nick} disconnected");
                         respond!(client, RES_GOODBYE, format!("{nick} has left the channel"));
                     }
                     Message::Sent { message, from, .. } => {
@@ -328,10 +336,12 @@ async fn handle_client(
     {
         let mut server = server.lock().await;
 
-        server.clients.remove(&addr);
-        server
-            .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
-            .await;
+        if let Some((nick, _)) = server.clients.remove(&addr) {
+            println!("INFO: Client {nick} disconnected");
+            server
+                .broadcast_others(Message::ClientDisconnected(client.nick.clone()), addr)
+                .await;
+        }
     }
 
     Ok(())
