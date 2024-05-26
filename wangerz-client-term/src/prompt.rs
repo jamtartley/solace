@@ -266,3 +266,229 @@ impl Renderable for Prompt {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event;
+
+    #[test]
+    fn test_flush() {
+        let mut prompt = Prompt::new();
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.flush();
+        assert_eq!(prompt.history, vec!["abc".to_string()]);
+        assert_eq!(prompt.history_offset, 0);
+        assert_eq!(prompt.curr, Vec::new());
+        assert_eq!(prompt.pos, 0);
+    }
+
+    #[test]
+    fn test_press_i_from_normal_mode() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 2;
+        prompt.handle_key_press(event::KeyCode::Char('i'));
+        assert!(matches!(prompt.mode, Mode::Insert));
+        assert_eq!(prompt.pos, 2);
+    }
+
+    #[test]
+    fn test_press_a_from_normal_mode() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 2;
+        prompt.handle_key_press(event::KeyCode::Char('a'));
+        assert!(matches!(prompt.mode, Mode::Insert));
+        assert_eq!(prompt.pos, 3);
+    }
+
+    #[test]
+    fn test_press_i_from_normal_mode_at_start() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 0;
+        prompt.handle_key_press(event::KeyCode::Char('i'));
+        assert!(matches!(prompt.mode, Mode::Insert));
+        assert_eq!(prompt.pos, 0);
+    }
+
+    #[test]
+    fn test_press_a_from_normal_mode_at_end() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 3;
+        prompt.handle_key_press(event::KeyCode::Char('a'));
+        assert!(matches!(prompt.mode, Mode::Insert));
+        assert_eq!(prompt.pos, 3);
+    }
+
+    #[test]
+    fn test_press_i_and_insert_char() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 1;
+        prompt.handle_key_press(event::KeyCode::Char('i'));
+        assert!(matches!(prompt.mode, Mode::Insert));
+        prompt.handle_key_press(event::KeyCode::Char('x'));
+        assert_eq!(prompt.curr, vec!['a', 'x', 'b', 'c']);
+        assert_eq!(prompt.pos, 2);
+    }
+
+    #[test]
+    fn test_press_a_and_insert_char() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 1;
+        prompt.handle_key_press(event::KeyCode::Char('a'));
+        assert!(matches!(prompt.mode, Mode::Insert));
+        prompt.handle_key_press(event::KeyCode::Char('x'));
+        assert_eq!(prompt.curr, vec!['a', 'b', 'x', 'c']);
+        assert_eq!(prompt.pos, 3);
+    }
+
+    #[test]
+    fn test_handle_key_press_normal_mode() {
+        let mut prompt = Prompt::new();
+        prompt.mode = Mode::Normal;
+        prompt.curr = vec!['a', 'b', 'c'];
+        prompt.pos = 1;
+        prompt.handle_key_press(event::KeyCode::Char('h'));
+        assert_eq!(prompt.pos, 0);
+        prompt.handle_key_press(event::KeyCode::Char('l'));
+        assert_eq!(prompt.pos, 1);
+        prompt.handle_key_press(event::KeyCode::Char('0'));
+        assert_eq!(prompt.pos, 0);
+        prompt.handle_key_press(event::KeyCode::Char('$'));
+        assert_eq!(prompt.pos, 3);
+    }
+
+    #[test]
+    fn test_insert() {
+        let mut prompt = Prompt::new();
+        prompt.insert('a');
+        assert_eq!(prompt.curr, vec!['a']);
+        assert_eq!(prompt.pos, 1);
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut prompt = Prompt::new();
+        prompt.insert('a');
+        prompt.insert('b');
+        prompt.remove();
+        assert_eq!(prompt.curr, vec!['a']);
+        assert_eq!(prompt.pos, 1);
+    }
+
+    #[test]
+    fn test_switch_to_mode() {
+        let mut prompt = Prompt::new();
+        prompt.switch_to_mode(Mode::Normal);
+        assert!(matches!(prompt.mode, Mode::Normal));
+        assert_eq!(prompt.command_buffer, Vec::new());
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut prompt = Prompt::new();
+        prompt.insert('a');
+        prompt.insert('b');
+        prompt.insert('c');
+        prompt.clear();
+        assert_eq!(prompt.curr, Vec::new());
+        assert_eq!(prompt.pos, 0);
+        assert!(matches!(prompt.mode, Mode::Insert));
+    }
+
+    #[test]
+    fn test_fetch_previous_with_history() {
+        let mut prompt = Prompt::new();
+        prompt.history = vec!["first".to_string(), "second".to_string()];
+        prompt.fetch_previous();
+        assert_eq!(prompt.curr, vec!['s', 'e', 'c', 'o', 'n', 'd']);
+        assert_eq!(prompt.pos, 6);
+    }
+
+    #[test]
+    fn test_fetch_previous_without_history() {
+        let mut prompt = Prompt::new();
+        prompt.history = vec![];
+        prompt.fetch_previous();
+        assert_eq!(prompt.curr, vec![]);
+        assert_eq!(prompt.pos, 0);
+    }
+
+    #[test]
+    fn test_fetch_next_with_history() {
+        let mut prompt = Prompt::new();
+        prompt.history = vec!["first".to_string(), "second".to_string()];
+        prompt.fetch_previous();
+        prompt.fetch_previous();
+        prompt.fetch_next();
+        assert_eq!(prompt.curr, vec!['s', 'e', 'c', 'o', 'n', 'd']);
+        assert_eq!(prompt.pos, 6);
+    }
+
+    #[test]
+    fn test_fetch_next_without_history() {
+        let mut prompt = Prompt::new();
+        prompt.history = vec![];
+        prompt.fetch_previous();
+        prompt.fetch_previous();
+        prompt.fetch_next();
+        assert_eq!(prompt.curr, vec![]);
+        assert_eq!(prompt.pos, 0);
+    }
+
+    #[test]
+    fn test_delete_until_end_from_start() {
+        let mut prompt = Prompt::new();
+        prompt.insert('a');
+        prompt.insert('b');
+        prompt.insert('c');
+        prompt.pos = 0;
+        prompt.delete_until_end();
+        assert_eq!(prompt.curr, vec![]);
+        assert_eq!(prompt.pos, 0);
+    }
+
+    #[test]
+    fn test_delete_until_end_from_middle() {
+        let mut prompt = Prompt::new();
+        prompt.insert('a');
+        prompt.insert('b');
+        prompt.insert('c');
+        prompt.pos = 1;
+        prompt.delete_until_end();
+        assert_eq!(prompt.curr, vec!['a']);
+        assert_eq!(prompt.pos, 1);
+    }
+
+    #[test]
+    fn test_delete_until_end_from_end() {
+        let mut prompt = Prompt::new();
+        prompt.insert('a');
+        prompt.insert('b');
+        prompt.insert('c');
+        prompt.pos = 3;
+        prompt.delete_until_end();
+        assert_eq!(prompt.curr, vec!['a', 'b', 'c']);
+        assert_eq!(prompt.pos, 3);
+    }
+
+    #[test]
+    fn test_find_previous_index() {
+        let mut prompt = Prompt::new();
+        prompt.curr = vec!['a', 'b', 'c', 'd'];
+        prompt.pos = 3;
+        let index = prompt.find_previous_index(|c| c == 'b');
+        assert_eq!(index, Some(1));
+    }
+}
