@@ -226,6 +226,7 @@ fn main() -> anyhow::Result<()> {
     let mut buf_prev = RenderBuffer::new(size.0, size.1);
     let mut prompt = prompt::Prompt::new();
     let mut should_quit = false;
+    let mut has_notified_no_remote = false;
     let _screen = Screen::start(&mut stdout)?;
 
     while !should_quit {
@@ -263,7 +264,15 @@ fn main() -> anyhow::Result<()> {
 
         buf_curr.clear();
 
-        chat_window.read()?;
+        if let Err(err) = chat_window.read() {
+            if !has_notified_no_remote {
+                chat_window.history.error(&err.to_string());
+                chat_window
+                    .history
+                    .error("Please try again with the /connect command");
+                has_notified_no_remote = true;
+            }
+        }
         chat_window.render_into(
             &mut buf_curr,
             &Rect {

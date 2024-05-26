@@ -34,6 +34,8 @@ pub(crate) struct Colors {
     pub(crate) bg: String,
     pub(crate) channel_mention: String,
     pub(crate) command: String,
+    pub(crate) error_bg: String,
+    pub(crate) error_fg: String,
     pub(crate) fg: String,
     pub(crate) message: String,
     pub(crate) server_message: String,

@@ -40,10 +40,7 @@ struct ChatHistoryEntry {
 
 impl ChatHistoryEntry {
     fn new(ast: Ast, author: Option<String>, timestamp: String) -> Self {
-        let mut parts = vec![
-            Self::part_from_timestamp(timestamp.clone()),
-            Self::part_from_author(author.clone()),
-        ];
+        let mut parts = Self::prefix(timestamp.clone(), author.clone());
         parts.extend(
             ast.nodes
                 .into_iter()
@@ -56,6 +53,32 @@ impl ChatHistoryEntry {
             timestamp,
             parts,
         }
+    }
+
+    fn error(msg: &str) -> Self {
+        let timestamp = chrono::Utc::now().format("%H:%M:%S").to_string();
+        let mut parts = Self::prefix(timestamp.clone(), None);
+        parts.push(ChatHistoryPart::new(
+            msg.to_owned(),
+            ChatHistoryPartStyle {
+                fg: config_hex_color!(colors.error_fg),
+                bg: config_hex_color!(colors.error_bg),
+                attr: crate::CellStyle::Bold,
+            },
+        ));
+
+        Self {
+            author: None,
+            parts,
+            timestamp,
+        }
+    }
+
+    fn prefix(timestamp: String, author: Option<String>) -> Vec<ChatHistoryPart> {
+        vec![
+            Self::part_from_timestamp(timestamp.clone()),
+            Self::part_from_author(author.clone()),
+        ]
     }
 
     fn part_from_timestamp(timestamp: String) -> ChatHistoryPart {
@@ -164,7 +187,7 @@ impl ChatHistoryEntry {
 }
 
 #[derive(Debug)]
-struct ChatHistory {
+pub(crate) struct ChatHistory {
     entries: Vec<ChatHistoryEntry>,
 }
 
@@ -197,7 +220,9 @@ impl ChatHistory {
         Self { entries: vec![] }
     }
 
-    fn error(&mut self, _msg: impl Into<String>) {}
+    pub(crate) fn error(&mut self, msg: &str) {
+        self.entries.push(ChatHistoryEntry::error(msg));
+    }
 
     fn message(&mut self, msg: &str, timestamp: &str, origin: &str) {
         let parsed = wangerz_message_parser::parse(msg);
@@ -249,7 +274,7 @@ pub(crate) struct ChatWindow {
     buf_message: Vec<u8>,
     stream: Option<TcpStream>,
     topic: ChatTopic,
-    history: ChatHistory,
+    pub(crate) history: ChatHistory,
 }
 
 impl ChatWindow {
@@ -313,6 +338,8 @@ impl ChatWindow {
                 }
                 _ => {}
             }
+        } else {
+            return Err(anyhow::anyhow!("ERROR: Could not connect to remote server"));
         }
 
         Ok(())
