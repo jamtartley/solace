@@ -38,6 +38,7 @@ pub(crate) struct Colors {
     pub(crate) error_fg: String,
     pub(crate) fg: String,
     pub(crate) message: String,
+    pub(crate) prompt_nick: String,
     pub(crate) server_message: String,
     pub(crate) timestamp_bg: String,
     pub(crate) timestamp_fg: String,

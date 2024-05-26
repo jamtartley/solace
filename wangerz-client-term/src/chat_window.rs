@@ -5,9 +5,13 @@ use std::{
 
 use crossterm::style;
 use wangerz_message_parser::{Ast, AstNode};
-use wangerz_protocol::{code::RES_TOPIC_CHANGE, request::Request, response::Response};
+use wangerz_protocol::{
+    code::{RES_TOPIC_CHANGE, RES_YOUR_NICK},
+    request::Request,
+    response::Response,
+};
 
-use crate::{config_hex_color, CellStyle, Rect, Renderable};
+use crate::{config_hex_color, prompt::Prompt, CellStyle, Rect, Renderable};
 
 #[derive(Debug)]
 struct ChatHistoryPartStyle {
@@ -275,6 +279,7 @@ pub(crate) struct ChatWindow {
     stream: Option<TcpStream>,
     topic: ChatTopic,
     pub(crate) history: ChatHistory,
+    pub(crate) prompt: Prompt,
 }
 
 impl ChatWindow {
@@ -289,6 +294,7 @@ impl ChatWindow {
         Self {
             buf_message: Vec::new(),
             history: ChatHistory::new(),
+            prompt: Prompt::new(),
             stream,
             topic: ChatTopic::default(),
         }
@@ -323,6 +329,9 @@ impl ChatWindow {
                         match code {
                             RES_TOPIC_CHANGE => {
                                 self.topic.0 = message;
+                            }
+                            RES_YOUR_NICK => {
+                                self.prompt.nick = message;
                             }
                             _ => self.history.message(&message, &timestamp, &origin),
                         }

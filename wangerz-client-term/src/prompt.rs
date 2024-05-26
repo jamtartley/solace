@@ -2,10 +2,11 @@ use std::io::{self, Write};
 
 use crossterm::{cursor, event, style, QueueableCommand};
 
-use crate::{CellStyle, Mode, Rect, RenderBuffer, Renderable};
+use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
 #[derive(Debug)]
 pub(crate) struct Prompt {
+    pub(crate) nick: String,
     pub(crate) pos: usize,
     command_buffer: Vec<char>,
     curr: Vec<char>,
@@ -22,6 +23,7 @@ impl Prompt {
             history: vec![],
             history_offset: 0,
             mode: Mode::Insert,
+            nick: String::default(),
             pos: 0,
         }
     }
@@ -45,7 +47,7 @@ impl Prompt {
     }
 
     pub(crate) fn align_cursor(&self, stdout: &mut io::Stdout, y: u16) -> anyhow::Result<()> {
-        let x = self.pos as u16;
+        let x = (self.nick_display().len() + self.pos) as u16;
 
         stdout
             .queue(cursor::MoveTo(x, y))?
@@ -56,6 +58,14 @@ impl Prompt {
             .flush()?;
 
         Ok(())
+    }
+
+    fn nick_display(&self) -> String {
+        if self.nick.is_empty() {
+            String::default()
+        } else {
+            format!("[{}] ", self.nick) // Padding deliberate
+        }
     }
 
     fn insert(&mut self, ch: char) {
@@ -231,9 +241,22 @@ impl Renderable for Prompt {
             );
         }
 
-        for (i, &ch) in self.curr.iter().enumerate() {
+        let nick_len = self.nick_display().len();
+
+        for (i, ch) in self.nick_display().chars().enumerate() {
             buf.put_at(
                 i as u16 + rect.x,
+                rect.y + 1,
+                ch,
+                style::Color::Reset,
+                config_hex_color!(colors.prompt_nick),
+                CellStyle::default(),
+            );
+        }
+
+        for (i, &ch) in self.curr.iter().enumerate() {
+            buf.put_at(
+                i as u16 + rect.x + nick_len as u16,
                 rect.y + 1,
                 ch,
                 style::Color::Reset,

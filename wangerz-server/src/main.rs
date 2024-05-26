@@ -147,11 +147,7 @@ async fn handle_client(
     let mut client = Client::new(addr, stream).await?;
 
     respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
-    respond!(
-        client,
-        RES_YOUR_NICK,
-        format!("Your nick is {}", client.nick.clone())
-    );
+    respond!(client, RES_YOUR_NICK, client.nick.clone());
 
     {
         let mut server = server.lock().await;
@@ -168,7 +164,7 @@ async fn handle_client(
             result = client.req.next() => match result {
                 Some(Ok(req)) => {
                     if req.message.starts_with("/topic")  {
-                        let topic= req.message.replace("/topic", "");
+                        let topic = req.message.replace("/topic", "");
                         let mut server = server.lock().await;
 
                         server.topic.clone_from(&topic);
@@ -263,6 +259,11 @@ async fn handle_client(
                         } else {
                             format!("{} is now known as {new_nick}", from.nick)
                         };
+
+                        if addr == from.addr {
+                            respond!(client, RES_YOUR_NICK, new_nick);
+                        }
+
                         respond!(client, RES_NICK_CHANGE, message);
                     }
                 }

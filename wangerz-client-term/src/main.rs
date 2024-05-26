@@ -224,7 +224,6 @@ fn main() -> anyhow::Result<()> {
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0, size.1);
     let mut buf_prev = RenderBuffer::new(size.0, size.1);
-    let mut prompt = prompt::Prompt::new();
     let mut should_quit = false;
     let mut has_notified_no_remote = false;
     let _screen = Screen::start(&mut stdout)?;
@@ -252,10 +251,10 @@ fn main() -> anyhow::Result<()> {
                             should_quit = true;
                         }
                         event::KeyCode::Enter => {
-                            chat_window.write(prompt.current_value())?;
-                            prompt.flush();
+                            chat_window.write(chat_window.prompt.current_value())?;
+                            chat_window.prompt.flush();
                         }
-                        _ => prompt.handle_key_press(code),
+                        _ => chat_window.prompt.handle_key_press(code),
                     }
                 }
                 _ => (),
@@ -283,7 +282,8 @@ fn main() -> anyhow::Result<()> {
             },
         );
 
-        prompt.render_into(
+        // @REFACTOR: abstract accesses to prompt behind chat_window
+        chat_window.prompt.render_into(
             &mut buf_curr,
             &Rect {
                 x: 0,
@@ -298,7 +298,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         // @CLEANUP: assumption that prompt is in the last row
-        prompt.align_cursor(&mut stdout, size.1)?;
+        chat_window.prompt.align_cursor(&mut stdout, size.1)?;
 
         mem::swap(&mut buf_curr, &mut buf_prev);
     }
