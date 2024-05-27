@@ -72,10 +72,6 @@ impl Decoder for Request {
             let mut buf = src.split_to(pos + 2).freeze();
             buf.truncate(pos);
 
-            if buf.len() < 5 {
-                return Err(anyhow::anyhow!("ERROR: Request is too short"));
-            }
-
             let request = Request::decode(&buf[..])?;
 
             return Ok(Some(request));

@@ -3,7 +3,6 @@
 use std::{
     io::{self, Write},
     mem, panic,
-    time::Duration,
 };
 
 use crossterm::{
@@ -11,6 +10,8 @@ use crossterm::{
     style::{self, Stylize},
     terminal, QueueableCommand,
 };
+
+use futures::{future::FutureExt, StreamExt};
 
 use crate::chat_window::ChatWindow;
 
@@ -218,16 +219,7 @@ impl Drop for Screen {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    panic::set_hook(Box::new(|info| {
-        crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
-        terminal::disable_raw_mode().unwrap();
-        eprintln!("ERROR: {}", info);
-        std::process::exit(1);
-    }));
-
-    const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
+async fn run() -> anyhow::Result<()> {
     let mut size = terminal::size()?;
     let mut chat_window = ChatWindow::new().await?;
     let mut stdout = io::stdout();
@@ -236,54 +228,51 @@ async fn main() -> anyhow::Result<()> {
     let mut should_quit = false;
     let mut has_notified_no_remote = false;
     let _screen = Screen::start(&mut stdout)?;
+    let mut reader = event::EventStream::new();
 
     while !should_quit {
         tokio::select! {
-            result = chat_window.read() => match result {
-                Err(err) => {
-                    if !has_notified_no_remote {
-                        chat_window.history.error(&err.to_string());
-                        chat_window
-                            .history
-                            .error("Please try again with the /connect command");
-                        has_notified_no_remote = true;
-                    }
-                },
-                _ => (),
-            }
-        }
-
-        if event::poll(FRAME_TIME)? {
-            match event::read()? {
-                event::Event::Resize(width, height) => {
-                    size = (width, height);
-                    buf_curr.resize(width, height);
-                    buf_prev.resize(width, height);
-                    buf_prev.render_to(&mut stdout)?;
-                    stdout.flush()?;
+            result = chat_window.read() => if let Err(err) = result {
+                if !has_notified_no_remote {
+                    chat_window.history.error(&err.to_string());
+                    chat_window
+                        .history
+                        .error("Please try again with the /connect command");
+                    has_notified_no_remote = true;
                 }
-                event::Event::Key(key) => {
-                    let event::KeyEvent {
-                        code, modifiers, ..
-                    } = key;
-
-                    match code {
-                        event::KeyCode::Char('c')
-                            if modifiers.contains(event::KeyModifiers::CONTROL) =>
-                        {
-                            // @TODO: Revisit quitting method
-                            should_quit = true;
-                        }
-                        event::KeyCode::Enter => {
-                            chat_window
-                                .write(chat_window.prompt.current_value())
-                                .await?;
-                            chat_window.prompt.flush();
-                        }
-                        _ => chat_window.prompt.handle_key_press(code),
+            },
+            maybe_event = reader.next().fuse() => if let Some(Ok(event)) = maybe_event {
+                match event {
+                    event::Event::Resize(width, height) => {
+                        size = (width, height);
+                        buf_curr.resize(width, height);
+                        buf_prev.resize(width, height);
+                        buf_prev.render_to(&mut stdout)?;
+                        stdout.flush()?;
                     }
+                    event::Event::Key(key) => {
+                        let event::KeyEvent {
+                            code, modifiers, ..
+                        } = key;
+
+                        match code {
+                            event::KeyCode::Char('c')
+                                if modifiers.contains(event::KeyModifiers::CONTROL) =>
+                            {
+                                // @TODO: Revisit quitting method
+                                should_quit = true;
+                            }
+                            event::KeyCode::Enter => {
+                                chat_window
+                                    .write(chat_window.prompt.current_value())
+                                    .await?;
+                                chat_window.prompt.flush();
+                            }
+                            _ => chat_window.prompt.handle_key_press(code),
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
 
@@ -325,4 +314,16 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    panic::set_hook(Box::new(|info| {
+        crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
+        terminal::disable_raw_mode().unwrap();
+        eprintln!("ERROR: {}", info);
+        std::process::exit(1);
+    }));
+
+    run().await
 }
