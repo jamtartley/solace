@@ -447,9 +447,11 @@ impl ChatWindow {
         Ok(())
     }
 
-    fn handle_local_command(&self, ast: &AstMessage) -> bool {
+    fn handle_local_command(&mut self, ast: &AstMessage) -> bool {
         match ast {
-            AstMessage::Command(AstNode::Command { parsed_name, .. }) => {
+            AstMessage::Command(AstNode::Command {
+                parsed_name, args, ..
+            }) => {
                 match parsed_name.as_str() {
                     "exit" => {
                         // @TODO: Just leave channel. not program
@@ -461,10 +463,33 @@ impl ChatWindow {
                         .unwrap();
                         std::process::exit(0);
                     }
-                    "connect" => {
-                        // @TODO: handle connect
-                        true
-                    }
+                    "connect" => match args.first() {
+                        Some(AstNode::Text { value, .. }) => {
+                            if self.stream.is_some() {
+                                self.history.error("Already connected!");
+                            } else {
+                                let stream = TcpStream::connect(value.trim())
+                                    .and_then(|s| {
+                                        s.set_nonblocking(true)?;
+                                        Ok(s)
+                                    })
+                                    .ok();
+
+                                if stream.is_none() {
+                                    self.history
+                                        .error(format!("Could not connect to {value}").as_str());
+                                }
+
+                                self.stream = stream;
+                            }
+
+                            true
+                        }
+                        Some(_) | None => {
+                            self.history.error("Usage: connect <addr>");
+                            false
+                        }
+                    },
                     _ => false,
                 }
             }
