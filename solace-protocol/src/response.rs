@@ -1,6 +1,8 @@
 use std::io::Write;
 
 use anyhow::Context;
+use bincode::{deserialize, serialize, Result};
+use serde::{Deserialize, Serialize};
 use tokio_util::{
     bytes::BufMut,
     codec::{Decoder, Encoder},
@@ -20,7 +22,7 @@ use tokio_util::{
 /// - `timestamp`: A `u64` representing the Unix timestamp when the response was generated.
 /// - `code`: A `u16` representing the response code.
 /// - `message`: A `String` containing the message.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct Response {
     pub version: u8,
     pub request_id: u32,
@@ -35,71 +37,69 @@ pub struct Response {
     pub message: String,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub enum ResponseMessage {
+    #[default]
+    Pong,
+    Welcome {
+        network: String,
+        nick: String,
+    },
+}
+
 impl Response {
-    pub fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![self.version];
-        bytes.extend(&self.request_id.to_be_bytes());
-        bytes.extend(&self.timestamp.to_be_bytes());
-        bytes.extend(&self.code.to_be_bytes());
-        bytes.extend(&self.origin_length.to_be_bytes());
-        bytes.extend(self.origin.as_bytes());
-        bytes.extend(self.message.as_bytes());
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        let mut bytes = serialize(self)?;
         bytes.extend(b"\r\n");
 
-        bytes
+        Ok(bytes)
+    }
+
+    pub fn decode(encoded: &[u8]) -> Result<Response> {
+        deserialize(encoded)
     }
 
     pub fn write_to(&self, stream: &mut impl Write) -> anyhow::Result<()> {
         stream
-            .write_all(&self.as_bytes())
+            .write_all(&self.encode()?[..])
             .context("ERROR: Failed to write to stream")
     }
 }
 
-impl TryFrom<&mut Vec<u8>> for Response {
+impl Decoder for Response {
+    type Item = Response;
     type Error = anyhow::Error;
 
-    fn try_from(buf: &mut Vec<u8>) -> Result<Self, anyhow::Error> {
-        if let Some(pos) = buf.windows(2).position(|w| w == b"\r\n") {
-            let parseable = buf.drain(..pos).collect::<Vec<u8>>();
-            buf.drain(0..2); // pop out the \r\n
+    fn decode(
+        &mut self,
+        src: &mut tokio_util::bytes::BytesMut,
+    ) -> anyhow::Result<Option<Response>> {
+        if let Some(pos) = src.windows(2).position(|w| w == b"\r\n") {
+            let mut buf = src.split_to(pos + 2).freeze();
+            buf.truncate(pos);
 
-            if parseable.len() < 13 {
-                return Err(anyhow::anyhow!("ERROR: Response is too short"));
-            }
+            let response = Response::decode(&buf[..])?;
 
-            let version = parseable[0];
-            // @CLEANUP: Assumption of big-endian byte order
-            let request_id =
-                u32::from_be_bytes([parseable[1], parseable[2], parseable[3], parseable[4]]);
-            let timestamp = u64::from_be_bytes([
-                parseable[5],
-                parseable[6],
-                parseable[7],
-                parseable[8],
-                parseable[9],
-                parseable[10],
-                parseable[11],
-                parseable[12],
-            ]);
-            let code = u16::from_be_bytes([parseable[13], parseable[14]]);
-            let origin_length = u8::from_be_bytes([parseable[15]]);
-            let origin_end = 16 + origin_length;
-            let origin = String::from_utf8(parseable[16..usize::from(origin_end)].to_vec())?;
-            let message = String::from_utf8(parseable[usize::from(origin_end)..].to_vec())?;
-
-            return Ok(Self {
-                version,
-                request_id,
-                timestamp,
-                code,
-                origin,
-                origin_length,
-                message,
-            });
+            return Ok(Some(response));
         }
 
-        Err(anyhow::anyhow!("ERROR: Invalid response"))
+        Ok(None)
+    }
+}
+
+impl Encoder<Response> for Response {
+    type Error = anyhow::Error;
+
+    fn encode(
+        &mut self,
+        item: Response,
+        dst: &mut tokio_util::bytes::BytesMut,
+    ) -> anyhow::Result<()> {
+        let bytes = item.encode()?;
+        dst.reserve(bytes.len());
+        dst.put(&bytes[..]);
+
+        Ok(())
     }
 }
 
@@ -143,60 +143,5 @@ impl ResponseBuilder {
             origin: self.origin,
             message: self.message,
         }
-    }
-}
-
-impl Decoder for Response {
-    type Item = Response;
-    type Error = anyhow::Error;
-
-    fn decode(
-        &mut self,
-        src: &mut tokio_util::bytes::BytesMut,
-    ) -> anyhow::Result<Option<Response>> {
-        if let Some(pos) = src.windows(2).position(|w| w == b"\r\n") {
-            let mut buf = src.split_to(pos + 2).freeze();
-            buf.truncate(pos);
-
-            let version = buf[0];
-            // @CLEANUP: Assumption of big-endian byte order
-            let request_id = u32::from_be_bytes([buf[1], buf[2], buf[3], buf[4]]);
-            let timestamp = u64::from_be_bytes([
-                buf[5], buf[6], buf[7], buf[8], buf[9], buf[10], buf[11], buf[12],
-            ]);
-            let code = u16::from_be_bytes([buf[13], buf[14]]);
-            let origin_length = u8::from_be_bytes([buf[15]]);
-            let origin_end = 16 + origin_length;
-            let origin = String::from_utf8(buf[16..usize::from(origin_end)].to_vec())?;
-            let message = String::from_utf8(buf[usize::from(origin_end)..].to_vec())?;
-
-            return Ok(Some(Response {
-                version,
-                request_id,
-                timestamp,
-                code,
-                origin,
-                origin_length,
-                message,
-            }));
-        }
-
-        Ok(None)
-    }
-}
-
-impl Encoder<Response> for Response {
-    type Error = anyhow::Error;
-
-    fn encode(
-        &mut self,
-        item: Response,
-        dst: &mut tokio_util::bytes::BytesMut,
-    ) -> anyhow::Result<()> {
-        let bytes = item.as_bytes();
-        dst.reserve(bytes.len());
-        dst.put(&bytes[..]);
-
-        Ok(())
     }
 }

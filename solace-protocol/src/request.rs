@@ -11,7 +11,7 @@ use tokio_util::{
 /// The structure of the request is as follows:
 /// - The first byte represents the version flag.
 /// - The next 4 bytes represent the request ID.
-/// - The remaining bytes represent the message, ending with a `\r\n` terminator.
+/// - The remaining bytes represent the message
 ///
 /// # Fields
 ///

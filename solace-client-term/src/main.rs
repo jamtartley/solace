@@ -218,7 +218,8 @@ impl Drop for Screen {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     panic::set_hook(Box::new(|info| {
         crossterm::execute!(io::stdout(), terminal::LeaveAlternateScreen).unwrap();
         terminal::disable_raw_mode().unwrap();
@@ -228,7 +229,7 @@ fn main() -> anyhow::Result<()> {
 
     const FRAME_TIME: Duration = std::time::Duration::from_millis(16);
     let mut size = terminal::size()?;
-    let mut chat_window = ChatWindow::new();
+    let mut chat_window = ChatWindow::new().await?;
     let mut stdout = io::stdout();
     let mut buf_curr = RenderBuffer::new(size.0, size.1);
     let mut buf_prev = RenderBuffer::new(size.0, size.1);

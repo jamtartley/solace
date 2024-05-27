@@ -1,15 +1,9 @@
-use std::{
-    io::{ErrorKind, Read},
-    net::TcpStream,
-};
-
 use crossterm::style;
 use solace_message_parser::{parse, AstMessage, AstNode};
-use solace_protocol::{
-    code::{RES_ACK_MESSAGE, RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
-    request::{Request, RequestMessage},
-    response::Response,
-};
+use solace_protocol::{request::Request, response::Response};
+use tokio::io::{split, ReadHalf, WriteHalf};
+use tokio::net::TcpStream;
+use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::{config_hex_color, prompt::Prompt, CellStyle, Rect, Renderable};
 
@@ -305,32 +299,33 @@ impl Renderable for ChatTopic {
 #[derive(Debug)]
 pub(crate) struct ChatWindow {
     buf_message: Vec<u8>,
-    stream: Option<TcpStream>,
     topic: ChatTopic,
+    req: FramedWrite<WriteHalf<TcpStream>, Request>,
+    res: FramedRead<ReadHalf<TcpStream>, Response>,
     pub(crate) history: ChatHistory,
     pub(crate) prompt: Prompt,
 }
 
 impl ChatWindow {
-    pub(crate) fn new() -> Self {
-        let stream = TcpStream::connect("0.0.0.0:7878")
-            .and_then(|s| {
-                s.set_nonblocking(true)?;
-                Ok(s)
-            })
-            .ok();
+    pub(crate) async fn new() -> anyhow::Result<Self> {
+        let stream = TcpStream::connect("0.0.0.0:7878").await?;
+
+        let (reader, writer) = split(stream);
+        let req = FramedWrite::new(writer, Request::default());
+        let res = FramedRead::new(reader, Response::default());
 
         let local_commands = vec!["exit".to_owned(), "connect".to_owned()];
         let mut prompt = Prompt::new();
         prompt.register_local_commands(local_commands);
 
-        Self {
+        Ok(Self {
             buf_message: Vec::new(),
             history: ChatHistory::new(),
+            req,
+            res,
             prompt,
-            stream,
             topic: ChatTopic::default(),
-        }
+        })
     }
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
@@ -340,7 +335,7 @@ impl ChatWindow {
             return Ok(());
         }
 
-        let message = match ast {
+        /* let message = match ast {
             AstMessage::Command(AstNode::Command {
                 parsed_name, args, ..
             }) => match parsed_name.as_str() {
@@ -362,96 +357,97 @@ impl ChatWindow {
             },
             AstMessage::Normal(_) => Some(RequestMessage::Message(to_send.to_owned())),
             _ => unreachable!(),
-        };
+        }; */
 
-        if let Some(tcp_stream) = self.stream.as_mut() {
-            if let Some(message) = message {
-                let id = rand::random::<u32>();
-                let timestamp = chrono::Utc::now().format("%H:%M:%S").to_string();
-                Request::new(id, message).write_to(tcp_stream)?;
+        /* if let Some(tcp_stream) = self.stream.as_mut() {
+                    if let Some(message) = message {
+                        let id = rand::random::<u32>();
+                        let timestamp = chrono::Utc::now().format("%H:%M:%S").to_string();
+                        Request::new(id, message).write_to(tcp_stream)?;
 
-                self.history
-                    .message(&to_send, &timestamp, &self.prompt.nick, Some(id));
-            }
-        }
-
+                        self.history
+                            .message(&to_send, &timestamp, &self.prompt.nick, Some(id));
+                    }
+                }
+        */
         Ok(())
     }
 
     pub(crate) fn read(&mut self) -> anyhow::Result<()> {
-        let mut buf_tmp = vec![0; 1504];
-
-        if let Some(tcp_stream) = &mut self.stream {
-            match tcp_stream.read(&mut buf_tmp) {
-                Ok(n) if n > 0 => {
-                    self.buf_message.extend_from_slice(&buf_tmp[..n]);
-
-                    while let Ok(res) = Response::try_from(&mut self.buf_message) {
-                        let Response {
-                            message,
-                            origin,
-                            timestamp,
-                            code,
-                            ..
-                        } = res;
-                        let timestamp = self.to_local_time(timestamp);
-
-                        match code {
-                            RES_TOPIC_CHANGE => {
-                                self.topic.0 = message;
-                            }
-                            RES_YOUR_NICK => {
-                                self.prompt.nick = message;
-                            }
-                            RES_COMMAND_LIST => {
-                                let mut commands = message
-                                    .split(' ')
-                                    .map(|x| x.to_owned())
-                                    .collect::<Vec<String>>();
-
-                                commands.sort_by_key(|a| a.to_lowercase());
-
-                                self.prompt.commands = commands;
-                            }
-                            RES_NICK_LIST => {
-                                let mut nicks = message
-                                    .split(' ')
-                                    .map(|x| x.to_owned())
-                                    .collect::<Vec<String>>();
-
-                                nicks.sort_by_key(|a| a.to_lowercase());
-
-                                self.prompt.nicks = nicks;
-                            }
-                            RES_ACK_MESSAGE => {
-                                self.history.ack(message.parse::<u32>()?);
-                            }
-                            _ => self.history.message(&message, &timestamp, &origin, None),
-                        }
-                    }
-                }
-                Ok(0) => {
-                    self.stream = None;
-                    self.history.error("Server closed the connection");
-                }
-                Err(e) if e.kind() != ErrorKind::WouldBlock => {
-                    self.stream = None;
-                    self.history.error("Server closed the connection");
-                }
-                _ => {}
-            }
-        } else {
-            return Err(anyhow::anyhow!("ERROR: Could not connect to remote server"));
-        }
-
+        crate::log!("");
+        // let res: FramedRead<TcpStream, Response> = self.stream;
+        //
+        // let mut buf_tmp = vec![0; 1504];
+        //
+        // if let Some(tcp_stream) = &mut self.stream {
+        //     match tcp_stream.read(&mut buf_tmp) {
+        //         Ok(n) if n > 0 => {
+        //             self.buf_message.extend_from_slice(&buf_tmp[..n]);
+        //
+        //             while let Ok(res) = Response::decode(&mut self.buf_message) {
+        //                 let Response {
+        //                     message,
+        //                     origin,
+        //                     timestamp,
+        //                     code,
+        //                     ..
+        //                 } = res;
+        //                 let timestamp = self.to_local_time(timestamp);
+        //
+        //                 match code {
+        //                     RES_TOPIC_CHANGE => {
+        //                         self.topic.0 = message;
+        //                     }
+        //                     RES_YOUR_NICK => {
+        //                         self.prompt.nick = message;
+        //                     }
+        //                     RES_COMMAND_LIST => {
+        //                         let mut commands = message
+        //                             .split(' ')
+        //                             .map(|x| x.to_owned())
+        //                             .collect::<Vec<String>>();
+        //
+        //                         commands.sort_by_key(|a| a.to_lowercase());
+        //
+        //                         self.prompt.commands = commands;
+        //                     }
+        //                     RES_NICK_LIST => {
+        //                         let mut nicks = message
+        //                             .split(' ')
+        //                             .map(|x| x.to_owned())
+        //                             .collect::<Vec<String>>();
+        //
+        //                         nicks.sort_by_key(|a| a.to_lowercase());
+        //
+        //                         self.prompt.nicks = nicks;
+        //                     }
+        //                     RES_ACK_MESSAGE => {
+        //                         self.history.ack(message.parse::<u32>()?);
+        //                     }
+        //                     _ => self.history.message(&message, &timestamp, &origin, None),
+        //                 }
+        //             }
+        //         }
+        //         Ok(0) => {
+        //             self.stream = None;
+        //             self.history.error("Server closed the connection");
+        //         }
+        //         Err(e) if e.kind() != ErrorKind::WouldBlock => {
+        //             self.stream = None;
+        //             self.history.error("Server closed the connection");
+        //         }
+        //         _ => {}
+        //     }
+        // } else {
+        //     return Err(anyhow::anyhow!("ERROR: Could not connect to remote server"));
+        // }
+        //
         Ok(())
     }
 
     fn handle_local_command(&mut self, ast: &AstMessage) -> bool {
         match ast {
-            AstMessage::Command(AstNode::Command {
-                parsed_name, args, ..
-            }) => {
+            AstMessage::Command(AstNode::Command { parsed_name, .. }) => {
                 match parsed_name.as_str() {
                     "exit" => {
                         // @TODO: Just leave channel. not program
@@ -463,7 +459,7 @@ impl ChatWindow {
                         .unwrap();
                         std::process::exit(0);
                     }
-                    "connect" => match args.first() {
+                    /* "connect" => match args.first() {
                         Some(AstNode::Text { value, .. }) => {
                             if self.stream.is_some() {
                                 self.history.error("Already connected!");
@@ -489,7 +485,7 @@ impl ChatWindow {
                             self.history.error("Usage: connect <addr>");
                             false
                         }
-                    },
+                    }, */
                     _ => false,
                 }
             }
