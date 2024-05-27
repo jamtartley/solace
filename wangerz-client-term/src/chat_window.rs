@@ -321,10 +321,14 @@ impl ChatWindow {
             })
             .ok();
 
+        let local_commands = vec!["exit".to_owned(), "connect".to_owned()];
+        let mut prompt = Prompt::new();
+        prompt.register_local_commands(local_commands);
+
         Self {
             buf_message: Vec::new(),
             history: ChatHistory::new(),
-            prompt: Prompt::new(),
+            prompt,
             stream,
             topic: ChatTopic::default(),
         }
@@ -332,6 +336,14 @@ impl ChatWindow {
 
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         let ast = parse(&to_send);
+
+        if ast.nodes.is_empty() {
+            return Ok(());
+        }
+
+        if self.handle_local_command(&ast) {
+            return Ok(());
+        }
 
         let message = match ast.nodes.first() {
             Some(AstNode::Command {
@@ -438,6 +450,30 @@ impl ChatWindow {
         }
 
         Ok(())
+    }
+
+    fn handle_local_command(&self, ast: &Ast) -> bool {
+        if let Some(AstNode::Command { parsed_name, .. }) = ast.nodes.first() {
+            match parsed_name.as_str() {
+                "exit" => {
+                    // @TODO: Just leave channel. not program
+                    crossterm::terminal::disable_raw_mode().unwrap();
+                    crossterm::execute!(
+                        std::io::stdout(),
+                        crossterm::terminal::LeaveAlternateScreen
+                    )
+                    .unwrap();
+                    std::process::exit(0);
+                }
+                "connect" => {
+                    // @TODO: handle connect
+                    return true;
+                }
+                _ => (),
+            }
+        }
+
+        false
     }
 
     fn to_local_time(&self, timestamp: u64) -> String {

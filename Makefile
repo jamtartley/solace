@@ -5,9 +5,17 @@ SERVER=wangerz-server
 build:
 	cargo build --all
 
+.PHONY: build-release
+build-release:
+	cargo build --all --release
+
 .PHONY: client
 client:
 	cargo run -p $(CLIENT)
+
+.PHONY: client-release
+client-release:
+	./target/release/$(CLIENT)
 
 .PHONY: clippy
 clippy:
@@ -21,3 +29,7 @@ doc:
 .PHONY: server
 server:
 	cargo run -p $(SERVER)
+
+.PHONY: server-release
+server-release:
+	./target/release/$(SERVER)

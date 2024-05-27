@@ -5,6 +5,7 @@ use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 #[derive(Debug)]
 pub(crate) struct Prompt {
     pub(crate) commands: Vec<String>,
+    pub(crate) local_commands: Vec<String>,
     pub(crate) nicks: Vec<String>,
     pub(crate) nick: String,
     pub(crate) pos: usize,
@@ -20,6 +21,7 @@ impl Prompt {
         Self {
             command_buffer: vec![],
             commands: vec![],
+            local_commands: vec![],
             nicks: vec![],
             curr: vec![],
             history: vec![],
@@ -56,6 +58,10 @@ impl Prompt {
         };
 
         (x, style)
+    }
+
+    pub(crate) fn register_local_commands(&mut self, commands: Vec<String>) {
+        self.local_commands = commands;
     }
 
     fn nick_display(&self) -> String {
@@ -228,10 +234,10 @@ impl Prompt {
 
     fn attempt_autocomplete(&mut self) {
         if let Some(first) = self.curr.first() {
-            let searchable = match *first {
-                '/' => Some(&self.commands),
-                '@' => Some(&self.nicks),
-                _ => None,
+            let searchable: Box<dyn Iterator<Item = &String>> = match *first {
+                '/' => Box::new(self.commands.iter().chain(self.local_commands.iter())),
+                '@' => Box::new(self.nicks.iter()),
+                _ => Box::new(std::iter::empty()),
             };
 
             if self.curr.len() == 1 {
@@ -242,16 +248,14 @@ impl Prompt {
                 return;
             }
 
-            if let Some(searchable) = searchable {
-                let to_search = self.curr.iter().skip(1).collect::<String>();
+            let to_search = self.curr.iter().skip(1).collect::<String>();
 
-                for value in searchable {
-                    if value.starts_with(&to_search) {
-                        self.curr = format!("{}{} ", first, value).chars().collect();
-                        self.pos = self.curr.len();
+            for value in searchable {
+                if value.starts_with(&to_search) {
+                    self.curr = format!("{}{} ", first, value).chars().collect();
+                    self.pos = self.curr.len();
 
-                        break;
-                    }
+                    break;
                 }
             }
         }
