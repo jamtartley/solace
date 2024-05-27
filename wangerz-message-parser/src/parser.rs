@@ -2,9 +2,16 @@
 
 use crate::lexer::{Lexer, TextSpan, Token, TokenKind};
 
-#[derive(Clone, Debug, Default)]
-pub struct Ast {
-    pub nodes: Vec<AstNode>,
+#[derive(Clone, Debug)]
+pub enum AstMessage {
+    Command(AstNode),
+    Normal(Vec<AstNode>),
+}
+
+impl Default for AstMessage {
+    fn default() -> Self {
+        Self::Normal(vec![])
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,7 +39,7 @@ pub enum AstNode {
 }
 
 pub struct Parser {
-    pub ast: Ast,
+    pub ast: AstMessage,
 
     pub current_pos: usize,
     tokens: Vec<Token>,
@@ -52,14 +59,14 @@ impl Parser {
         assert!(!tokens.is_empty());
 
         Self {
-            ast: Ast::default(),
+            ast: AstMessage::default(),
             current_pos: 0,
             tokens,
         }
     }
 
-    pub fn parse(&mut self) -> Ast {
-        Ast::parse(self).unwrap()
+    pub fn parse(&mut self) -> AstMessage {
+        AstMessage::parse(self).unwrap()
     }
 
     fn current_token(&self) -> Token {
@@ -79,7 +86,7 @@ impl Parser {
     }
 }
 
-impl Parse for Ast {
+impl Parse for AstMessage {
     fn parse(parser: &mut Parser) -> Option<Self> {
         let mut nodes = vec![];
 
@@ -89,7 +96,11 @@ impl Parse for Ast {
             }
         }
 
-        Some(Self { nodes })
+        match nodes.first() {
+            Some(AstNode::Command { .. }) => Some(Self::Command(nodes.first().unwrap().clone())),
+            Some(_) => Some(Self::Normal(nodes)),
+            None => unreachable!(),
+        }
     }
 }
 

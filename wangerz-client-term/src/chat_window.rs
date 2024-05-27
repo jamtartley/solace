@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::style;
-use wangerz_message_parser::{parse, Ast, AstNode};
+use wangerz_message_parser::{parse, AstMessage, AstNode};
 use wangerz_protocol::{
     code::{RES_ACK_MESSAGE, RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
     request::{Request, RequestMessage},
@@ -51,14 +51,9 @@ struct ChatHistoryEntry {
 }
 
 impl ChatHistoryEntry {
-    fn new(ast: Ast, author: Option<String>, timestamp: String, id: Option<u32>) -> Self {
+    fn new(ast: AstMessage, author: Option<String>, timestamp: String, id: Option<u32>) -> Self {
         let mut parts = Self::prefix(timestamp.clone(), author.clone());
-        parts.extend(
-            ast.nodes
-                .into_iter()
-                .flat_map(|arg| Self::parts_for_node(arg, author.clone()))
-                .collect::<Vec<ChatHistoryPart>>(),
-        );
+        parts.extend(Self::parts_for_ast(&ast, &author));
 
         Self {
             author,
@@ -140,64 +135,68 @@ impl ChatHistoryEntry {
         )
     }
 
-    fn parts_for_node(node: AstNode, author: Option<String>) -> Vec<ChatHistoryPart> {
+    fn parts_for_ast(ast: &AstMessage, author: &Option<String>) -> Vec<ChatHistoryPart> {
+        match ast {
+            AstMessage::Command(command) => match command {
+                AstNode::Command { args, .. } => {
+                    let mut parts = vec![Self::part_for_node(command.clone(), author)];
+                    parts.extend(
+                        args.iter()
+                            .map(|n| Self::part_for_node(n.clone(), author))
+                            .collect::<Vec<ChatHistoryPart>>(),
+                    );
+
+                    parts
+                }
+                _ => unreachable!(),
+            },
+            AstMessage::Normal(nodes) => nodes
+                .iter()
+                .map(|n| Self::part_for_node(n.clone(), author))
+                .collect::<Vec<ChatHistoryPart>>(),
+        }
+    }
+
+    fn part_for_node(node: AstNode, author: &Option<String>) -> ChatHistoryPart {
         match node {
-            wangerz_message_parser::AstNode::Text { value, .. } => {
-                vec![ChatHistoryPart::new(
-                    value,
-                    ChatHistoryPartStyle::new(
-                        if author.is_some() {
-                            config_hex_color!(colors.message)
-                        } else {
-                            config_hex_color!(colors.server_message)
-                        },
-                        style::Color::Reset,
-                        crate::CellStyle::Normal,
-                    ),
-                )]
-            }
-            wangerz_message_parser::AstNode::ChannelMention {
+            AstNode::Command { raw_name, .. } => ChatHistoryPart::new(
+                raw_name,
+                ChatHistoryPartStyle::new(
+                    config_hex_color!(colors.command),
+                    style::Color::Reset,
+                    crate::CellStyle::Bold,
+                ),
+            ),
+            AstNode::UserMention { raw_user_name, .. } => ChatHistoryPart::new(
+                raw_user_name,
+                ChatHistoryPartStyle::new(
+                    config_hex_color!(colors.user_mention),
+                    style::Color::Reset,
+                    crate::CellStyle::Bold,
+                ),
+            ),
+            AstNode::ChannelMention {
                 raw_channel_name, ..
-            } => {
-                vec![ChatHistoryPart::new(
-                    raw_channel_name,
-                    ChatHistoryPartStyle::new(
-                        config_hex_color!(colors.channel_mention),
-                        style::Color::Reset,
-                        crate::CellStyle::Bold,
-                    ),
-                )]
-            }
-            wangerz_message_parser::AstNode::UserMention { raw_user_name, .. } => {
-                vec![ChatHistoryPart::new(
-                    raw_user_name,
-                    ChatHistoryPartStyle::new(
-                        config_hex_color!(colors.user_mention),
-                        style::Color::Reset,
-                        crate::CellStyle::Bold,
-                    ),
-                )]
-            }
-            wangerz_message_parser::AstNode::Command {
-                raw_name: name,
-                args,
-                ..
-            } => {
-                let args_parts = args
-                    .into_iter()
-                    .flat_map(|arg| Self::parts_for_node(arg, author.clone()))
-                    .collect::<Vec<ChatHistoryPart>>();
-                let mut parts = vec![ChatHistoryPart::new(
-                    name,
-                    ChatHistoryPartStyle::new(
-                        config_hex_color!(colors.command),
-                        style::Color::Reset,
-                        crate::CellStyle::Bold,
-                    ),
-                )];
-                parts.extend(args_parts);
-                parts
-            }
+            } => ChatHistoryPart::new(
+                raw_channel_name,
+                ChatHistoryPartStyle::new(
+                    config_hex_color!(colors.channel_mention),
+                    style::Color::Reset,
+                    crate::CellStyle::Bold,
+                ),
+            ),
+            AstNode::Text { value, .. } => ChatHistoryPart::new(
+                value,
+                ChatHistoryPartStyle::new(
+                    if author.is_some() {
+                        config_hex_color!(colors.message)
+                    } else {
+                        config_hex_color!(colors.server_message)
+                    },
+                    style::Color::Reset,
+                    crate::CellStyle::Normal,
+                ),
+            ),
         }
     }
 }
@@ -337,16 +336,12 @@ impl ChatWindow {
     pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         let ast = parse(&to_send);
 
-        if ast.nodes.is_empty() {
-            return Ok(());
-        }
-
         if self.handle_local_command(&ast) {
             return Ok(());
         }
 
-        let message = match ast.nodes.first() {
-            Some(AstNode::Command {
+        let message = match ast {
+            AstMessage::Command(AstNode::Command {
                 parsed_name, args, ..
             }) => match parsed_name.as_str() {
                 "ping" => Some(RequestMessage::Ping),
@@ -365,8 +360,8 @@ impl ChatWindow {
                 })),
                 _ => unimplemented!(),
             },
-            Some(AstNode::Text { value, .. }) => Some(RequestMessage::Message(value.to_owned())),
-            _ => unimplemented!(),
+            AstMessage::Normal(_) => Some(RequestMessage::Message(to_send.to_owned())),
+            _ => unreachable!(),
         };
 
         if let Some(tcp_stream) = self.stream.as_mut() {
@@ -452,28 +447,29 @@ impl ChatWindow {
         Ok(())
     }
 
-    fn handle_local_command(&self, ast: &Ast) -> bool {
-        if let Some(AstNode::Command { parsed_name, .. }) = ast.nodes.first() {
-            match parsed_name.as_str() {
-                "exit" => {
-                    // @TODO: Just leave channel. not program
-                    crossterm::terminal::disable_raw_mode().unwrap();
-                    crossterm::execute!(
-                        std::io::stdout(),
-                        crossterm::terminal::LeaveAlternateScreen
-                    )
-                    .unwrap();
-                    std::process::exit(0);
+    fn handle_local_command(&self, ast: &AstMessage) -> bool {
+        match ast {
+            AstMessage::Command(AstNode::Command { parsed_name, .. }) => {
+                match parsed_name.as_str() {
+                    "exit" => {
+                        // @TODO: Just leave channel. not program
+                        crossterm::terminal::disable_raw_mode().unwrap();
+                        crossterm::execute!(
+                            std::io::stdout(),
+                            crossterm::terminal::LeaveAlternateScreen
+                        )
+                        .unwrap();
+                        std::process::exit(0);
+                    }
+                    "connect" => {
+                        // @TODO: handle connect
+                        return true;
+                    }
+                    _ => false,
                 }
-                "connect" => {
-                    // @TODO: handle connect
-                    return true;
-                }
-                _ => (),
             }
+            _ => false,
         }
-
-        false
     }
 
     fn to_local_time(&self, timestamp: u64) -> String {
