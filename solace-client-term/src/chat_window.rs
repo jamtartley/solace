@@ -1,8 +1,14 @@
 use crossterm::style;
+use futures::sink::SinkExt;
 use solace_message_parser::{parse, AstMessage, AstNode};
+use solace_protocol::code::{
+    RES_ACK_MESSAGE, RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK,
+};
+use solace_protocol::request::RequestMessage;
 use solace_protocol::{request::Request, response::Response};
 use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
+use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
 use crate::{config_hex_color, prompt::Prompt, CellStyle, Rect, Renderable};
@@ -321,21 +327,21 @@ impl ChatWindow {
         Ok(Self {
             buf_message: Vec::new(),
             history: ChatHistory::new(),
+            prompt,
             req,
             res,
-            prompt,
             topic: ChatTopic::default(),
         })
     }
 
-    pub(crate) fn write(&mut self, to_send: String) -> anyhow::Result<()> {
+    pub(crate) async fn write(&mut self, to_send: String) -> anyhow::Result<()> {
         let ast = parse(&to_send);
 
         if self.handle_local_command(&ast) {
             return Ok(());
         }
 
-        /* let message = match ast {
+        let message = match ast {
             AstMessage::Command(AstNode::Command {
                 parsed_name, args, ..
             }) => match parsed_name.as_str() {
@@ -357,91 +363,72 @@ impl ChatWindow {
             },
             AstMessage::Normal(_) => Some(RequestMessage::Message(to_send.to_owned())),
             _ => unreachable!(),
-        }; */
+        };
 
-        /* if let Some(tcp_stream) = self.stream.as_mut() {
-                    if let Some(message) = message {
-                        let id = rand::random::<u32>();
-                        let timestamp = chrono::Utc::now().format("%H:%M:%S").to_string();
-                        Request::new(id, message).write_to(tcp_stream)?;
+        if let Some(message) = message {
+            let id = rand::random::<u32>();
+            let timestamp = chrono::Utc::now().format("%H:%M:%S").to_string();
+            let request = Request::new(id, message);
+            self.req.send(request).await?;
 
-                        self.history
-                            .message(&to_send, &timestamp, &self.prompt.nick, Some(id));
-                    }
-                }
-        */
+            self.history
+                .message(&to_send, &timestamp, &self.prompt.nick, Some(id));
+        }
+
         Ok(())
     }
 
-    pub(crate) fn read(&mut self) -> anyhow::Result<()> {
-        crate::log!("");
-        // let res: FramedRead<TcpStream, Response> = self.stream;
-        //
-        // let mut buf_tmp = vec![0; 1504];
-        //
-        // if let Some(tcp_stream) = &mut self.stream {
-        //     match tcp_stream.read(&mut buf_tmp) {
-        //         Ok(n) if n > 0 => {
-        //             self.buf_message.extend_from_slice(&buf_tmp[..n]);
-        //
-        //             while let Ok(res) = Response::decode(&mut self.buf_message) {
-        //                 let Response {
-        //                     message,
-        //                     origin,
-        //                     timestamp,
-        //                     code,
-        //                     ..
-        //                 } = res;
-        //                 let timestamp = self.to_local_time(timestamp);
-        //
-        //                 match code {
-        //                     RES_TOPIC_CHANGE => {
-        //                         self.topic.0 = message;
-        //                     }
-        //                     RES_YOUR_NICK => {
-        //                         self.prompt.nick = message;
-        //                     }
-        //                     RES_COMMAND_LIST => {
-        //                         let mut commands = message
-        //                             .split(' ')
-        //                             .map(|x| x.to_owned())
-        //                             .collect::<Vec<String>>();
-        //
-        //                         commands.sort_by_key(|a| a.to_lowercase());
-        //
-        //                         self.prompt.commands = commands;
-        //                     }
-        //                     RES_NICK_LIST => {
-        //                         let mut nicks = message
-        //                             .split(' ')
-        //                             .map(|x| x.to_owned())
-        //                             .collect::<Vec<String>>();
-        //
-        //                         nicks.sort_by_key(|a| a.to_lowercase());
-        //
-        //                         self.prompt.nicks = nicks;
-        //                     }
-        //                     RES_ACK_MESSAGE => {
-        //                         self.history.ack(message.parse::<u32>()?);
-        //                     }
-        //                     _ => self.history.message(&message, &timestamp, &origin, None),
-        //                 }
-        //             }
-        //         }
-        //         Ok(0) => {
-        //             self.stream = None;
-        //             self.history.error("Server closed the connection");
-        //         }
-        //         Err(e) if e.kind() != ErrorKind::WouldBlock => {
-        //             self.stream = None;
-        //             self.history.error("Server closed the connection");
-        //         }
-        //         _ => {}
-        //     }
-        // } else {
-        //     return Err(anyhow::anyhow!("ERROR: Could not connect to remote server"));
-        // }
-        //
+    pub(crate) async fn read(&mut self) -> anyhow::Result<()> {
+        match self.res.next().await {
+            Some(Ok(res)) => {
+                let Response {
+                    message,
+                    origin,
+                    timestamp,
+                    code,
+                    ..
+                } = res;
+                let timestamp = self.to_local_time(timestamp);
+
+                match code {
+                    RES_TOPIC_CHANGE => {
+                        self.topic.0 = message;
+                    }
+                    RES_YOUR_NICK => {
+                        self.prompt.nick = message;
+                    }
+                    RES_COMMAND_LIST => {
+                        let mut commands = message
+                            .split(' ')
+                            .map(|x| x.to_owned())
+                            .collect::<Vec<String>>();
+
+                        commands.sort_by_key(|a| a.to_lowercase());
+
+                        self.prompt.commands = commands;
+                    }
+                    RES_NICK_LIST => {
+                        let mut nicks = message
+                            .split(' ')
+                            .map(|x| x.to_owned())
+                            .collect::<Vec<String>>();
+
+                        nicks.sort_by_key(|a| a.to_lowercase());
+
+                        self.prompt.nicks = nicks;
+                    }
+                    RES_ACK_MESSAGE => {
+                        self.history.ack(message.parse::<u32>()?);
+                    }
+                    _ => self.history.message(&message, &timestamp, &origin, None),
+                }
+            }
+            None => {
+                self.history.error("Server closed the connection");
+            }
+            _ => (),
+        }
+
         Ok(())
     }
 

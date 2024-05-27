@@ -17,5 +17,7 @@ rand = "0.8.5"
 toml = "0.8.13"
 serde = { version = "1.0.202", features = ["derive"] }
 xdg = "2.5.2"
+tokio-stream = "0.1.15"
 tokio-util = { version = "0.7.11", features = ["codec"] }
 tokio = { version = "1.37.0", features = ["full"] }
+futures = "0.3.30"

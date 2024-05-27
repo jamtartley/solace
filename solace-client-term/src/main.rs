@@ -238,6 +238,21 @@ async fn main() -> anyhow::Result<()> {
     let _screen = Screen::start(&mut stdout)?;
 
     while !should_quit {
+        tokio::select! {
+            result = chat_window.read() => match result {
+                Err(err) => {
+                    if !has_notified_no_remote {
+                        chat_window.history.error(&err.to_string());
+                        chat_window
+                            .history
+                            .error("Please try again with the /connect command");
+                        has_notified_no_remote = true;
+                    }
+                },
+                _ => (),
+            }
+        }
+
         if event::poll(FRAME_TIME)? {
             match event::read()? {
                 event::Event::Resize(width, height) => {
@@ -260,7 +275,9 @@ async fn main() -> anyhow::Result<()> {
                             should_quit = true;
                         }
                         event::KeyCode::Enter => {
-                            chat_window.write(chat_window.prompt.current_value())?;
+                            chat_window
+                                .write(chat_window.prompt.current_value())
+                                .await?;
                             chat_window.prompt.flush();
                         }
                         _ => chat_window.prompt.handle_key_press(code),
@@ -272,15 +289,6 @@ async fn main() -> anyhow::Result<()> {
 
         buf_curr.clear();
 
-        if let Err(err) = chat_window.read() {
-            if !has_notified_no_remote {
-                chat_window.history.error(&err.to_string());
-                chat_window
-                    .history
-                    .error("Please try again with the /connect command");
-                has_notified_no_remote = true;
-            }
-        }
         chat_window.render_into(
             &mut buf_curr,
             &Rect {
