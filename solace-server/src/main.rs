@@ -8,16 +8,16 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
 
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use wangerz_protocol::code::{
+use solace_protocol::code::{
     ERR_WHO_IS, RES_ACK_MESSAGE, RES_CHAT_MESSAGE_OK, RES_COMMAND_LIST, RES_GOODBYE, RES_HELLO,
     RES_NICK_CHANGE, RES_NICK_LIST, RES_PONG, RES_TOPIC_CHANGE, RES_TOPIC_CHANGE_MESSAGE,
     RES_WELCOME, RES_WHO_IS, RES_YOUR_NICK,
 };
-use wangerz_protocol::request::{Request, RequestMessage};
-use wangerz_protocol::response::{Response, ResponseBuilder};
+use solace_protocol::request::{Request, RequestMessage};
+use solace_protocol::response::{Response, ResponseBuilder};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 type Tx = mpsc::UnboundedSender<Message>;
 type Rx = mpsc::UnboundedReceiver<Message>;
@@ -159,7 +159,7 @@ async fn handle_client(
 
     println!("INFO: Client {} connected", client.nick.clone());
 
-    respond!(client, RES_WELCOME, "Welcome to wangerz!".to_owned());
+    respond!(client, RES_WELCOME, "Welcome to solace!".to_owned());
     respond!(client, RES_YOUR_NICK, client.nick.clone());
 
     {

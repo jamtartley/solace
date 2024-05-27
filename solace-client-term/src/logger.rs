@@ -6,7 +6,7 @@ use std::{
 
 use once_cell::sync::Lazy;
 
-pub(crate) static LOGGER: Lazy<Logger> = Lazy::new(|| Logger::new("/tmp/wangerz.log"));
+pub(crate) static LOGGER: Lazy<Logger> = Lazy::new(|| Logger::new("/tmp/solace.log"));
 
 #[macro_export]
 macro_rules! log {

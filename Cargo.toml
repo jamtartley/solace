@@ -1,3 +1,3 @@
 [workspace]
-members = ["wangerz-server", "wangerz-client-term", "wangerz-message-parser", "wangerz-protocol"]
+members = ["solace-server", "solace-client-term", "solace-message-parser", "solace-protocol"]
 resolver = "2"

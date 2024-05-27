@@ -50,8 +50,8 @@ pub(crate) struct Colors {
 
 impl Config {
     pub(crate) fn new() -> anyhow::Result<Self> {
-        let base_path = xdg::BaseDirectories::with_prefix("wangerz")
-            .with_context(|| "ERROR: Couldn't find XDG path for wangerz")?;
+        let base_path = xdg::BaseDirectories::with_prefix("solace")
+            .with_context(|| "ERROR: Couldn't find XDG path for solace")?;
         let valid_config_paths = vec!["config.toml", ".config.toml"];
 
         for path in &valid_config_paths {

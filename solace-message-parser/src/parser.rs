@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_channel_and_users_are_parsed_in_command() {
-        let mut parser = Parser::new("/start #wangerz test @user");
+        let mut parser = Parser::new("/start #solace test @user");
         let ast = parser.parse();
         assert_eq!(
             ast,
@@ -258,16 +258,16 @@ mod tests {
                         value: " ".to_owned()
                     },
                     AstNode::ChannelMention {
-                        span: TextSpan::new(7, 15),
-                        raw_channel_name: "#wangerz".to_owned(),
-                        parsed_channel_name: "wangerz".to_owned()
+                        span: TextSpan::new(7, 14),
+                        raw_channel_name: "#solace".to_owned(),
+                        parsed_channel_name: "solace".to_owned()
                     },
                     AstNode::Text {
-                        span: TextSpan::new(15, 21),
+                        span: TextSpan::new(14, 20),
                         value: " test ".to_owned()
                     },
                     AstNode::UserMention {
-                        span: TextSpan::new(21, 26),
+                        span: TextSpan::new(20, 25),
                         raw_user_name: "@user".to_owned(),
                         parsed_user_name: "user".to_owned()
                     },

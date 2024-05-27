@@ -4,8 +4,8 @@ use std::{
 };
 
 use crossterm::style;
-use wangerz_message_parser::{parse, AstMessage, AstNode};
-use wangerz_protocol::{
+use solace_message_parser::{parse, AstMessage, AstNode};
+use solace_protocol::{
     code::{RES_ACK_MESSAGE, RES_COMMAND_LIST, RES_NICK_LIST, RES_TOPIC_CHANGE, RES_YOUR_NICK},
     request::{Request, RequestMessage},
     response::Response,
@@ -251,7 +251,7 @@ impl ChatHistory {
     }
 
     fn message(&mut self, msg: &str, timestamp: &str, origin: &str, id: Option<u32>) {
-        let parsed = wangerz_message_parser::parse(msg);
+        let parsed = solace_message_parser::parse(msg);
         let entry = ChatHistoryEntry::new(
             parsed,
             if origin.is_empty() {

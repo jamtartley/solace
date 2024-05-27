@@ -588,6 +588,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "solace-client-term"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "once_cell",
+ "rand",
+ "serde",
+ "solace-message-parser",
+ "solace-protocol",
+ "toml",
+ "xdg",
+]
+
+[[package]]
+name = "solace-message-parser"
+version = "0.1.0"
+
+[[package]]
+name = "solace-protocol"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "chrono",
+ "serde",
+ "tokio-util",
+]
+
+[[package]]
+name = "solace-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "rand",
+ "solace-message-parser",
+ "solace-protocol",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -691,51 +736,6 @@ name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
-
-[[package]]
-name = "wangerz-client-term"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "crossterm",
- "once_cell",
- "rand",
- "serde",
- "toml",
- "wangerz-message-parser",
- "wangerz-protocol",
- "xdg",
-]
-
-[[package]]
-name = "wangerz-message-parser"
-version = "0.1.0"
-
-[[package]]
-name = "wangerz-protocol"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "chrono",
- "serde",
- "tokio-util",
-]
-
-[[package]]
-name = "wangerz-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "futures",
- "rand",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "wangerz-message-parser",
- "wangerz-protocol",
-]
 
 [[package]]
 name = "wasi"

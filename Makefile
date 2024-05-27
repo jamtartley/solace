@@ -1,5 +1,5 @@
-CLIENT=wangerz-client-term
-SERVER=wangerz-server
+CLIENT=solace-client-term
+SERVER=solace-server
 
 .PHONY: build
 build:
