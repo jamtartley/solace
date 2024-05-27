@@ -463,7 +463,7 @@ impl ChatWindow {
                     }
                     "connect" => {
                         // @TODO: handle connect
-                        return true;
+                        true
                     }
                     _ => false,
                 }
