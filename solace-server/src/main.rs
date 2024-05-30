@@ -2,6 +2,7 @@
 
 use futures::sink::SinkExt;
 use rand::Rng;
+use solace_message_parser::parse;
 use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
@@ -203,6 +204,7 @@ async fn handle_client(
                         }
                         RequestMessage::Message(message) => {
                             let mut server = server.lock().await;
+
                             server
                                 .broadcast_others(Message::Sent {
                                     from: MessageClient {
@@ -343,6 +345,10 @@ async fn handle_client(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    println!(
+        "{:?}",
+        parse("/topic Hello world!") // parse("   Hello 😂👍orld  🍋 owefk pwekof pwek wkepo koe ")
+    );
     const HOST: &str = "0.0.0.0";
     const PORT: i32 = 7878;
 

@@ -1,5 +1,15 @@
 #![allow(dead_code)]
 
+use std::iter::Peekable;
+
+use unicode_segmentation::{Graphemes, UnicodeSegmentation};
+
+macro_rules! token {
+    ($k: expr, $c0: expr, $c1: expr) => {
+        Token::new($k, TextSpan::new($c0, $c1))
+    };
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextSpan {
     c0: usize,
@@ -34,6 +44,7 @@ impl Token {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+
 pub(crate) enum TokenKind {
     Text(String),
     Command(String),
@@ -42,121 +53,84 @@ pub(crate) enum TokenKind {
     Eof,
 }
 
-pub(crate) struct Lexer {
+pub(crate) struct Lexer<'a> {
     pub(crate) tokens: Vec<Token>,
 
-    content: Vec<char>,
-    current_pos: usize,
-    end_pos: usize,
+    content: Peekable<Graphemes<'a>>,
+    len: usize,
+    pos: usize,
 }
 
-impl Lexer {
-    pub(crate) fn new(content: &str) -> Self {
+impl<'a> Lexer<'a> {
+    pub(crate) fn new(content: &'a str) -> Self {
         Self {
             tokens: vec![],
 
-            content: content.chars().collect(),
-            current_pos: 0,
-            end_pos: content.len(),
+            content: content.graphemes(true).peekable(),
+            len: content.len(),
+            pos: 0,
         }
     }
 
     pub(crate) fn lex(&mut self) -> Vec<Token> {
         loop {
-            let token = self.get_next_token();
-            self.tokens.push(token.clone());
+            self.eat_whitespace();
 
-            if token.kind == TokenKind::Eof {
-                break;
-            }
+            let start = self.pos;
+            let kind = match self.current() {
+                Some("/") => TokenKind::Command,
+                Some("@") => TokenKind::UserMention,
+                Some("#") => TokenKind::ChannelMention,
+                Some(_) => TokenKind::Text,
+                None => break,
+            };
+
+            let word = self.consume_word();
+            let len = word.chars().count();
+
+            self.tokens.push(token!(kind(word), start, start + len));
         }
+
+        self.tokens.push(token!(TokenKind::Eof, self.pos, self.pos));
 
         self.tokens.clone()
     }
 
-    fn get_next_token(&mut self) -> Token {
-        if self.is_at_end() {
-            return Token::new(
-                TokenKind::Eof,
-                TextSpan::new(self.current_pos, self.current_pos),
-            );
-        }
-
-        match self.current() {
-            '/' if self.current_pos == 0 => self.lex_special('/', |ch| ch.is_whitespace()),
-            '@' | '#'
-                if self.current_pos == 0 || self.content[self.current_pos - 1].is_whitespace() =>
-            {
-                self.lex_special(self.current(), |ch| !ch.is_alphanumeric())
-            }
-            _ => self.lex_text(),
-        }
-    }
-
-    fn current(&self) -> char {
-        // @FIXME: Panics on multi-byte chars, should probably be using a string for content
-        self.content[self.current_pos]
-    }
-
-    fn peek(&self) -> Option<char> {
-        if self.is_at_end() {
-            None
-        } else {
-            Some(self.content[self.current_pos + 1])
-        }
-    }
-
-    fn is_at_end(&self) -> bool {
-        self.current_pos >= self.end_pos
+    fn current(&mut self) -> Option<&str> {
+        self.content.peek().copied()
     }
 
     fn advance(&mut self) {
-        if !self.is_at_end() {
-            self.current_pos += 1;
+        if self.pos < self.len {
+            let _ = self.content.next();
+            self.pos += 1;
         }
     }
 
-    fn lex_special<F>(&mut self, marker: char, terminate_when: F) -> Token
-    where
-        F: Fn(char) -> bool,
-    {
-        assert!(['/', '@', '#'].contains(&marker));
+    fn consume_word(&mut self) -> String {
+        let mut s = String::new();
 
-        let start = self.current_pos;
+        loop {
+            match self.current() {
+                Some(str) if !str.trim().is_empty() => s.push_str(str),
+                _ => break,
+            }
 
-        self.advance();
-
-        while !self.is_at_end() && !terminate_when(self.current()) {
             self.advance();
         }
 
-        let value = self.content[start..self.current_pos].iter().collect();
-        let span = TextSpan::new(start, self.current_pos);
-
-        match marker {
-            '/' => Token::new(TokenKind::Command(value), span),
-            '@' => Token::new(TokenKind::UserMention(value), span),
-            '#' => Token::new(TokenKind::ChannelMention(value), span),
-            symbol => panic!("Unexpected symbol: {symbol}"),
-        }
+        s
     }
 
-    fn lex_text(&mut self) -> Token {
-        let start = self.current_pos;
-
-        while !(self.is_at_end() || self.is_start_of_special()) {
-            self.advance();
+    fn eat_whitespace(&mut self) {
+        loop {
+            match self.current() {
+                Some(s) if s.trim().is_empty() => {
+                    self.advance();
+                }
+                _ => return,
+            }
         }
-
-        Token::new(
-            TokenKind::Text(self.content[start..self.current_pos].iter().collect()),
-            TextSpan::new(start, self.current_pos),
-        )
-    }
-
-    fn is_start_of_special(&self) -> bool {
-        matches!(self.current(), '@' | '#')
-            && (self.current_pos == 0 || self.content[self.current_pos - 1].is_whitespace())
     }
 }
 
