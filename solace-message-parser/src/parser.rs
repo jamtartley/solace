@@ -36,6 +36,7 @@ pub enum AstNode {
         span: TextSpan,
         value: String,
     },
+    Whitespace(usize),
 }
 
 pub struct Parser {
@@ -149,6 +150,7 @@ impl Parse for AstNode {
                 }),
                 1,
             ),
+            TokenKind::Whitespace(len) => (Some(AstNode::Whitespace(len)), 1),
             TokenKind::Eof => (None, 0),
         };
 

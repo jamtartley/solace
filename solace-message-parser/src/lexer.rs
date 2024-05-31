@@ -50,6 +50,7 @@ pub(crate) enum TokenKind {
     Command(String),
     UserMention(String),
     ChannelMention(String),
+    Whitespace(usize),
     Eof,
 }
 
@@ -74,7 +75,9 @@ impl<'a> Lexer<'a> {
 
     pub(crate) fn lex(&mut self) -> Vec<Token> {
         loop {
-            self.eat_whitespace();
+            if let Some(token) = self.eat_whitespace() {
+                self.tokens.push(token);
+            }
 
             let start = self.pos;
             let kind = match self.current() {
@@ -122,13 +125,23 @@ impl<'a> Lexer<'a> {
         s
     }
 
-    fn eat_whitespace(&mut self) {
+    fn eat_whitespace(&mut self) -> Option<Token> {
+        let start = self.pos;
+        let mut len = 0;
+
         loop {
             match self.current() {
                 Some(s) if s.trim().is_empty() => {
+                    len += 1;
                     self.advance();
                 }
-                _ => return,
+                _ => {
+                    if len > 0 {
+                        return Some(token!(TokenKind::Whitespace(len), start, start + len));
+                    } else {
+                        return None;
+                    }
+                }
             }
         }
     }

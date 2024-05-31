@@ -345,10 +345,6 @@ async fn handle_client(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    println!(
-        "{:?}",
-        parse("/topic Hello world!") // parse("   Hello 😂👍orld  🍋 owefk pwekof pwek wkepo koe ")
-    );
     const HOST: &str = "0.0.0.0";
     const PORT: i32 = 7878;
 
