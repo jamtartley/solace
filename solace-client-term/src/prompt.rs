@@ -1,4 +1,5 @@
 use crossterm::{cursor, event, style};
+use solace_message_parser::{parse, AstMessage, AstNode};
 
 use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
@@ -233,32 +234,28 @@ impl Prompt {
     }
 
     fn attempt_autocomplete(&mut self) {
-        if let Some(first) = self.curr.first() {
-            let searchable: Box<dyn Iterator<Item = &String>> = match *first {
-                '/' => Box::new(self.commands.iter().chain(self.local_commands.iter())),
-                '@' => Box::new(self.nicks.iter()),
-                _ => Box::new(std::iter::empty()),
-            };
+        let ast = parse(&self.curr.iter().collect::<String>());
 
-            if self.curr.len() == 1 {
-                return;
-            }
+        let (needle, haystack) = match &ast {
+            AstMessage::Command(AstNode::Command { parsed_name, .. }) => (
+                parsed_name,
+                self.commands
+                    .iter()
+                    .chain(self.local_commands.iter())
+                    .map(|x| x.clone())
+                    .collect::<Vec<String>>(),
+            ),
+            AstMessage::Normal(nodes) => match &nodes.last() {
+                Some(AstNode::UserMention {
+                    parsed_user_name, ..
+                }) => (parsed_user_name, self.nicks.clone()),
+                _ => return,
+            },
+            _ => return,
+        };
 
-            if self.curr.iter().any(|c| c.is_whitespace()) {
-                return;
-            }
-
-            let to_search = self.curr.iter().skip(1).collect::<String>();
-
-            for value in searchable {
-                if value.starts_with(&to_search) {
-                    self.curr = format!("{}{} ", first, value).chars().collect();
-                    self.pos = self.curr.len();
-
-                    break;
-                }
-            }
-        }
+        let found = haystack.iter().find(|x| x.starts_with(needle));
+        crate::log!("{found:?}");
     }
 }
 
