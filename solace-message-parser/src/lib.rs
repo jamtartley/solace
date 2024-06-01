@@ -1,3 +1,4 @@
+pub use lexer::TextSpan;
 pub use parser::{AstMessage, AstNode, Parser};
 
 mod lexer;
