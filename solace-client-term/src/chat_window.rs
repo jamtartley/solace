@@ -197,6 +197,14 @@ impl ChatHistoryEntry {
                     crate::CellStyle::Normal,
                 ),
             ),
+            AstNode::Whitespace { span } => ChatHistoryPart::new(
+                " ".repeat(span.len()),
+                ChatHistoryPartStyle::new(
+                    style::Color::Reset,
+                    style::Color::Reset,
+                    crate::CellStyle::Normal,
+                ),
+            ),
         }
     }
 }
@@ -347,18 +355,42 @@ impl ChatWindow {
             }) => match parsed_name.as_str() {
                 "ping" => Some(RequestMessage::Ping),
                 "disconnect" => Some(RequestMessage::Disconnect),
-                "nick" => Some(RequestMessage::NewNick(match args.first() {
-                    Some(AstNode::Text { value, .. }) => value.to_owned(),
-                    _ => todo!(),
-                })),
-                "topic" => Some(RequestMessage::NewTopic(match args.first() {
-                    Some(AstNode::Text { value, .. }) => value.to_owned(),
-                    _ => todo!(),
-                })),
-                "whois" => Some(RequestMessage::WhoIs(match args.first() {
-                    Some(AstNode::Text { value, .. }) => value.to_owned(),
-                    _ => todo!(),
-                })),
+                "nick" => Some(RequestMessage::NewNick(
+                    match args
+                        .iter()
+                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace { .. }))
+                        .cloned()
+                        .collect::<Vec<AstNode>>()
+                        .first()
+                    {
+                        Some(AstNode::Text { value, .. }) => value.to_owned(),
+                        _ => todo!(),
+                    },
+                )),
+                "topic" => Some(RequestMessage::NewTopic(
+                    match args
+                        .iter()
+                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace { .. }))
+                        .cloned()
+                        .collect::<Vec<AstNode>>()
+                        .first()
+                    {
+                        Some(AstNode::Text { value, .. }) => value.to_owned(),
+                        _ => todo!(),
+                    },
+                )),
+                "whois" => Some(RequestMessage::WhoIs(
+                    match args
+                        .iter()
+                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace { .. }))
+                        .cloned()
+                        .collect::<Vec<AstNode>>()
+                        .first()
+                    {
+                        Some(AstNode::Text { value, .. }) => value.to_owned(),
+                        _ => todo!(),
+                    },
+                )),
                 _ => unimplemented!(),
             },
             AstMessage::Normal(_) => Some(RequestMessage::Message(to_send.to_owned())),

@@ -1,4 +1,5 @@
 use crossterm::{cursor, event, style};
+use solace_message_parser::{parse, AstNode};
 
 use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
@@ -233,30 +234,49 @@ impl Prompt {
     }
 
     fn attempt_autocomplete(&mut self) {
-        if let Some(first) = self.curr.first() {
-            let searchable: Box<dyn Iterator<Item = &String>> = match *first {
-                '/' => Box::new(self.commands.iter().chain(self.local_commands.iter())),
-                '@' => Box::new(self.nicks.iter()),
-                _ => Box::new(std::iter::empty()),
-            };
+        let ast = parse(&self.curr.iter().collect::<String>());
 
-            if self.curr.len() == 1 {
-                return;
+        let (needle, needle_span, haystack) = match ast.node_at_pos(self.pos) {
+            Some(node) => match &node {
+                AstNode::Command {
+                    span, parsed_name, ..
+                } => (
+                    parsed_name,
+                    span,
+                    self.commands
+                        .iter()
+                        .chain(self.local_commands.iter())
+                        .cloned()
+                        .collect::<Vec<String>>(),
+                ),
+                AstNode::UserMention {
+                    parsed_user_name,
+                    span,
+                    ..
+                } => (parsed_user_name, span, self.nicks.clone()),
+                // @TODO: Implement channel name autocompletion when we have channels
+                AstNode::ChannelMention { .. } => return,
+                AstNode::Text { .. } => return,
+                AstNode::Whitespace { .. } => return,
+            },
+            None => return,
+        };
+
+        let completion = haystack.iter().find(|x| x.starts_with(needle));
+
+        if let Some(found) = completion {
+            // Skip marker
+            let start = needle_span.c0 + 1;
+            let end = needle_span.c1;
+
+            self.pos = end;
+
+            for _ in start..end {
+                self.remove();
             }
 
-            if self.curr.iter().any(|c| c.is_whitespace()) {
-                return;
-            }
-
-            let to_search = self.curr.iter().skip(1).collect::<String>();
-
-            for value in searchable {
-                if value.starts_with(&to_search) {
-                    self.curr = format!("{}{} ", first, value).chars().collect();
-                    self.pos = self.curr.len();
-
-                    break;
-                }
+            for ch in found.chars() {
+                self.insert(ch);
             }
         }
     }
@@ -310,7 +330,7 @@ mod tests {
         let mut prompt = Prompt::new();
         prompt.curr = vec!['a', 'b', 'c'];
         prompt.flush();
-        assert_eq!(prompt.history, vec!["abc".to_string()]);
+        assert_eq!(prompt.history, vec!["abc".to_owned()]);
         assert_eq!(prompt.history_offset, 0);
         assert_eq!(prompt.curr, Vec::new());
         assert_eq!(prompt.pos, 0);
@@ -446,7 +466,7 @@ mod tests {
     #[test]
     fn test_fetch_previous_with_history() {
         let mut prompt = Prompt::new();
-        prompt.history = vec!["first".to_string(), "second".to_string()];
+        prompt.history = vec!["first".to_owned(), "second".to_owned()];
         prompt.fetch_previous();
         assert_eq!(prompt.curr, vec!['s', 'e', 'c', 'o', 'n', 'd']);
         assert_eq!(prompt.pos, 6);
@@ -464,7 +484,7 @@ mod tests {
     #[test]
     fn test_fetch_next_with_history() {
         let mut prompt = Prompt::new();
-        prompt.history = vec!["first".to_string(), "second".to_string()];
+        prompt.history = vec!["first".to_owned(), "second".to_owned()];
         prompt.fetch_previous();
         prompt.fetch_previous();
         prompt.fetch_next();
@@ -538,7 +558,7 @@ mod tests {
     #[test]
     fn test_nick_display_with_nick() {
         let mut prompt = Prompt::new();
-        prompt.nick = "user".to_string();
+        prompt.nick = "user".to_owned();
         assert_eq!(prompt.nick_display(), "[user] ");
     }
 
@@ -546,6 +566,7 @@ mod tests {
     fn test_attempt_autocomplete_does_nothing_without_commands() {
         let mut prompt = Prompt::new();
         prompt.curr = vec!['/'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['/']);
     }
@@ -553,26 +574,19 @@ mod tests {
     #[test]
     fn test_attempt_autocomplete_does_nothing_if_not_only_slash() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["topic".to_string()];
+        prompt.commands = vec!["topic".to_owned()];
         prompt.curr = vec!['c', 'o'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['c', 'o']);
     }
 
     #[test]
-    fn test_attempt_autocomplete_does_nothing_if_only_slash() {
-        let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
-        prompt.curr = vec!['/'];
-        prompt.attempt_autocomplete();
-        assert_eq!(prompt.curr, vec!['/']);
-    }
-
-    #[test]
     fn test_attempt_autocomplete_does_nothing_with_whitespace() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
+        prompt.commands = vec!["help".to_owned()];
         prompt.curr = vec!['/', 'h', 'e', ' '];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['/', 'h', 'e', ' ']);
     }
@@ -580,17 +594,19 @@ mod tests {
     #[test]
     fn test_attempt_autocomplete_successful() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
+        prompt.commands = vec!["help".to_owned()];
         prompt.curr = vec!['/', 'h', 'e'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
-        assert_eq!(prompt.curr, vec!['/', 'h', 'e', 'l', 'p', ' ']);
+        assert_eq!(prompt.curr, vec!['/', 'h', 'e', 'l', 'p']);
     }
 
     #[test]
     fn test_attempt_autocomplete_no_match() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
+        prompt.commands = vec!["help".to_owned()];
         prompt.curr = vec!['/', 'x', 'y', 'z'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['/', 'x', 'y', 'z']);
     }
@@ -598,9 +614,10 @@ mod tests {
     #[test]
     fn test_attempt_autocomplete_multiple_matches_picks_first() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string(), "hello".to_string()];
+        prompt.commands = vec!["help".to_owned(), "hello".to_owned()];
         prompt.curr = vec!['/', 'h', 'e'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
-        assert!(prompt.curr == vec!['/', 'h', 'e', 'l', 'p', ' ']);
+        assert!(prompt.curr == vec!['/', 'h', 'e', 'l', 'p']);
     }
 }

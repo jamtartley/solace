@@ -203,6 +203,7 @@ async fn handle_client(
                         }
                         RequestMessage::Message(message) => {
                             let mut server = server.lock().await;
+
                             server
                                 .broadcast_others(Message::Sent {
                                     from: MessageClient {

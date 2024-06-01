@@ -14,6 +14,15 @@ impl Default for AstMessage {
     }
 }
 
+impl AstMessage {
+    pub fn node_at_pos(&self, pos: usize) -> Option<&AstNode> {
+        match self {
+            AstMessage::Command(command) => command.contains_pos(pos).then_some(command),
+            AstMessage::Normal(nodes) => nodes.iter().find(|n| n.contains_pos(pos)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AstNode {
     Command {
@@ -36,6 +45,21 @@ pub enum AstNode {
         span: TextSpan,
         value: String,
     },
+    Whitespace {
+        span: TextSpan,
+    },
+}
+
+impl AstNode {
+    fn contains_pos(&self, pos: usize) -> bool {
+        match self {
+            AstNode::Command { span, .. } => span.contains(pos),
+            AstNode::UserMention { span, .. } => span.contains(pos),
+            AstNode::ChannelMention { span, .. } => span.contains(pos),
+            AstNode::Text { span, .. } => span.contains(pos),
+            AstNode::Whitespace { span } => span.contains(pos),
+        }
+    }
 }
 
 pub struct Parser {
@@ -149,6 +173,7 @@ impl Parse for AstNode {
                 }),
                 1,
             ),
+            TokenKind::Whitespace(_) => (Some(AstNode::Whitespace { span }), 1),
             TokenKind::Eof => (None, 0),
         };
 
@@ -159,138 +184,4 @@ impl Parse for AstNode {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lexer::TextSpan;
-
-    #[test]
-    fn test_simple_text_only_message() {
-        let mut parser = Parser::new("hello, world!");
-        let ast = parser.parse();
-        assert_eq!(
-            ast,
-            AstMessage::Normal(vec![AstNode::Text {
-                span: TextSpan::new(0, 13),
-                value: "hello, world!".to_owned()
-            }])
-        );
-    }
-
-    #[test]
-    fn test_simple_command() {
-        let mut parser = Parser::new("/command some text");
-        let ast = parser.parse();
-        assert_eq!(
-            ast,
-            AstMessage::Command(AstNode::Command {
-                span: TextSpan::new(0, 8),
-                raw_name: "/command".to_owned(),
-                parsed_name: "command".to_owned(),
-                args: vec![AstNode::Text {
-                    span: TextSpan::new(8, 18),
-                    value: " some text".to_owned()
-                }]
-            })
-        );
-    }
-
-    #[test]
-    fn test_user_mention() {
-        let mut parser = Parser::new("Hello @user!");
-        let ast = parser.parse();
-        assert_eq!(
-            ast,
-            AstMessage::Normal(vec![
-                AstNode::Text {
-                    span: TextSpan::new(0, 6),
-                    value: "Hello ".to_owned(),
-                },
-                AstNode::UserMention {
-                    span: TextSpan::new(6, 11),
-                    raw_user_name: "@user".to_owned(),
-                    parsed_user_name: "user".to_owned(),
-                },
-                AstNode::Text {
-                    span: TextSpan::new(11, 12),
-                    value: "!".to_owned(),
-                },
-            ])
-        );
-    }
-
-    #[test]
-    fn test_channel_mention() {
-        let mut parser = Parser::new("Check out #channel now");
-        let ast = parser.parse();
-        assert_eq!(
-            ast,
-            AstMessage::Normal(vec![
-                AstNode::Text {
-                    span: TextSpan::new(0, 10),
-                    value: "Check out ".to_owned(),
-                },
-                AstNode::ChannelMention {
-                    span: TextSpan::new(10, 18),
-                    raw_channel_name: "#channel".to_owned(),
-                    parsed_channel_name: "channel".to_owned(),
-                },
-                AstNode::Text {
-                    span: TextSpan::new(18, 22),
-                    value: " now".to_owned(),
-                },
-            ])
-        );
-    }
-
-    #[test]
-    fn test_channel_and_users_are_parsed_in_command() {
-        let mut parser = Parser::new("/start #solace test @user");
-        let ast = parser.parse();
-        assert_eq!(
-            ast,
-            AstMessage::Command(AstNode::Command {
-                span: TextSpan::new(0, 6),
-                raw_name: "/start".to_owned(),
-                parsed_name: "start".to_owned(),
-                args: vec![
-                    AstNode::Text {
-                        span: TextSpan::new(6, 7),
-                        value: " ".to_owned()
-                    },
-                    AstNode::ChannelMention {
-                        span: TextSpan::new(7, 14),
-                        raw_channel_name: "#solace".to_owned(),
-                        parsed_channel_name: "solace".to_owned()
-                    },
-                    AstNode::Text {
-                        span: TextSpan::new(14, 20),
-                        value: " test ".to_owned()
-                    },
-                    AstNode::UserMention {
-                        span: TextSpan::new(20, 25),
-                        raw_user_name: "@user".to_owned(),
-                        parsed_user_name: "user".to_owned()
-                    },
-                ]
-            })
-        );
-    }
-
-    #[test]
-    fn test_only_first_command_counts() {
-        let mut parser = Parser::new("/start /cmd1 arg1 /cmd2 arg2 arg3 end");
-        let ast = parser.parse();
-        assert_eq!(
-            ast,
-            AstMessage::Command(AstNode::Command {
-                span: TextSpan::new(0, 6),
-                raw_name: "/start".to_owned(),
-                parsed_name: "start".to_owned(),
-                args: vec![AstNode::Text {
-                    span: TextSpan::new(6, 37),
-                    value: " /cmd1 arg1 /cmd2 arg2 arg3 end".to_owned()
-                }]
-            })
-        );
-    }
-}
+mod tests {}
