@@ -2,7 +2,6 @@
 
 use futures::sink::SinkExt;
 use rand::Rng;
-use solace_message_parser::parse;
 use tokio::io::{split, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};

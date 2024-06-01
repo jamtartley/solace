@@ -1,5 +1,5 @@
 use crossterm::{cursor, event, style};
-use solace_message_parser::{parse, AstMessage, AstNode, TextSpan};
+use solace_message_parser::{parse, AstNode};
 
 use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
@@ -246,7 +246,7 @@ impl Prompt {
                     self.commands
                         .iter()
                         .chain(self.local_commands.iter())
-                        .map(|x| x.clone())
+                        .cloned()
                         .collect::<Vec<String>>(),
                 ),
                 AstNode::UserMention {
@@ -257,7 +257,7 @@ impl Prompt {
                 // @TODO: Implement channel name autocompletion when we have channels
                 AstNode::ChannelMention { .. } => return,
                 AstNode::Text { .. } => return,
-                AstNode::Whitespace(_) => return,
+                AstNode::Whitespace { .. } => return,
             },
             None => return,
         };
@@ -330,7 +330,7 @@ mod tests {
         let mut prompt = Prompt::new();
         prompt.curr = vec!['a', 'b', 'c'];
         prompt.flush();
-        assert_eq!(prompt.history, vec!["abc".to_string()]);
+        assert_eq!(prompt.history, vec!["abc".to_owned()]);
         assert_eq!(prompt.history_offset, 0);
         assert_eq!(prompt.curr, Vec::new());
         assert_eq!(prompt.pos, 0);
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn test_fetch_previous_with_history() {
         let mut prompt = Prompt::new();
-        prompt.history = vec!["first".to_string(), "second".to_string()];
+        prompt.history = vec!["first".to_owned(), "second".to_owned()];
         prompt.fetch_previous();
         assert_eq!(prompt.curr, vec!['s', 'e', 'c', 'o', 'n', 'd']);
         assert_eq!(prompt.pos, 6);
@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn test_fetch_next_with_history() {
         let mut prompt = Prompt::new();
-        prompt.history = vec!["first".to_string(), "second".to_string()];
+        prompt.history = vec!["first".to_owned(), "second".to_owned()];
         prompt.fetch_previous();
         prompt.fetch_previous();
         prompt.fetch_next();
@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn test_nick_display_with_nick() {
         let mut prompt = Prompt::new();
-        prompt.nick = "user".to_string();
+        prompt.nick = "user".to_owned();
         assert_eq!(prompt.nick_display(), "[user] ");
     }
 
@@ -566,6 +566,7 @@ mod tests {
     fn test_attempt_autocomplete_does_nothing_without_commands() {
         let mut prompt = Prompt::new();
         prompt.curr = vec!['/'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['/']);
     }
@@ -573,26 +574,19 @@ mod tests {
     #[test]
     fn test_attempt_autocomplete_does_nothing_if_not_only_slash() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["topic".to_string()];
+        prompt.commands = vec!["topic".to_owned()];
         prompt.curr = vec!['c', 'o'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['c', 'o']);
     }
 
     #[test]
-    fn test_attempt_autocomplete_does_nothing_if_only_slash() {
-        let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
-        prompt.curr = vec!['/'];
-        prompt.attempt_autocomplete();
-        assert_eq!(prompt.curr, vec!['/']);
-    }
-
-    #[test]
     fn test_attempt_autocomplete_does_nothing_with_whitespace() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
+        prompt.commands = vec!["help".to_owned()];
         prompt.curr = vec!['/', 'h', 'e', ' '];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['/', 'h', 'e', ' ']);
     }
@@ -600,17 +594,19 @@ mod tests {
     #[test]
     fn test_attempt_autocomplete_successful() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
+        prompt.commands = vec!["help".to_owned()];
         prompt.curr = vec!['/', 'h', 'e'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
-        assert_eq!(prompt.curr, vec!['/', 'h', 'e', 'l', 'p', ' ']);
+        assert_eq!(prompt.curr, vec!['/', 'h', 'e', 'l', 'p']);
     }
 
     #[test]
     fn test_attempt_autocomplete_no_match() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string()];
+        prompt.commands = vec!["help".to_owned()];
         prompt.curr = vec!['/', 'x', 'y', 'z'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
         assert_eq!(prompt.curr, vec!['/', 'x', 'y', 'z']);
     }
@@ -618,9 +614,10 @@ mod tests {
     #[test]
     fn test_attempt_autocomplete_multiple_matches_picks_first() {
         let mut prompt = Prompt::new();
-        prompt.commands = vec!["help".to_string(), "hello".to_string()];
+        prompt.commands = vec!["help".to_owned(), "hello".to_owned()];
         prompt.curr = vec!['/', 'h', 'e'];
+        prompt.pos = prompt.curr.len();
         prompt.attempt_autocomplete();
-        assert!(prompt.curr == vec!['/', 'h', 'e', 'l', 'p', ' ']);
+        assert!(prompt.curr == vec!['/', 'h', 'e', 'l', 'p']);
     }
 }

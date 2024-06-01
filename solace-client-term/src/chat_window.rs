@@ -197,8 +197,8 @@ impl ChatHistoryEntry {
                     crate::CellStyle::Normal,
                 ),
             ),
-            AstNode::Whitespace(len) => ChatHistoryPart::new(
-                " ".repeat(len),
+            AstNode::Whitespace { span } => ChatHistoryPart::new(
+                " ".repeat(span.len()),
                 ChatHistoryPartStyle::new(
                     style::Color::Reset,
                     style::Color::Reset,
@@ -358,7 +358,7 @@ impl ChatWindow {
                 "nick" => Some(RequestMessage::NewNick(
                     match args
                         .iter()
-                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace(_)))
+                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace { .. }))
                         .cloned()
                         .collect::<Vec<AstNode>>()
                         .first()
@@ -370,7 +370,7 @@ impl ChatWindow {
                 "topic" => Some(RequestMessage::NewTopic(
                     match args
                         .iter()
-                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace(_)))
+                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace { .. }))
                         .cloned()
                         .collect::<Vec<AstNode>>()
                         .first()
@@ -382,7 +382,7 @@ impl ChatWindow {
                 "whois" => Some(RequestMessage::WhoIs(
                     match args
                         .iter()
-                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace(_)))
+                        .skip_while(|arg| matches!(*arg, AstNode::Whitespace { .. }))
                         .cloned()
                         .collect::<Vec<AstNode>>()
                         .first()
