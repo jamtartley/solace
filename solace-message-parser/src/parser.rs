@@ -14,6 +14,15 @@ impl Default for AstMessage {
     }
 }
 
+impl AstMessage {
+    pub fn node_at_pos(&self, pos: usize) -> Option<&AstNode> {
+        match self {
+            AstMessage::Command(command) => command.contains_pos(pos).then_some(command),
+            AstMessage::Normal(nodes) => nodes.iter().find(|n| n.contains_pos(pos)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AstNode {
     Command {
@@ -37,6 +46,18 @@ pub enum AstNode {
         value: String,
     },
     Whitespace(usize),
+}
+
+impl AstNode {
+    fn contains_pos(&self, pos: usize) -> bool {
+        match self {
+            AstNode::Command { span, .. } => span.contains(pos),
+            AstNode::UserMention { span, .. } => span.contains(pos),
+            AstNode::ChannelMention { span, .. } => span.contains(pos),
+            AstNode::Text { span, .. } => span.contains(pos),
+            AstNode::Whitespace(_) => false,
+        }
+    }
 }
 
 pub struct Parser {

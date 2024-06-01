@@ -12,13 +12,21 @@ macro_rules! token {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextSpan {
-    c0: usize,
-    c1: usize,
+    pub c0: usize,
+    pub c1: usize,
 }
 
 impl TextSpan {
     pub(crate) fn new(c0: usize, c1: usize) -> Self {
         Self { c0, c1 }
+    }
+
+    pub fn len(&self) -> usize {
+        self.c1 - self.c0
+    }
+
+    pub fn contains(&self, pos: usize) -> bool {
+        self.c0 <= pos && pos <= self.c1
     }
 }
 

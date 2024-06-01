@@ -1,5 +1,5 @@
 use crossterm::{cursor, event, style};
-use solace_message_parser::{parse, AstMessage, AstNode};
+use solace_message_parser::{parse, AstMessage, AstNode, TextSpan};
 
 use crate::{config_hex_color, CellStyle, Mode, Rect, RenderBuffer, Renderable};
 
@@ -236,26 +236,49 @@ impl Prompt {
     fn attempt_autocomplete(&mut self) {
         let ast = parse(&self.curr.iter().collect::<String>());
 
-        let (needle, haystack) = match &ast {
-            AstMessage::Command(AstNode::Command { parsed_name, .. }) => (
-                parsed_name,
-                self.commands
-                    .iter()
-                    .chain(self.local_commands.iter())
-                    .map(|x| x.clone())
-                    .collect::<Vec<String>>(),
-            ),
-            AstMessage::Normal(nodes) => match &nodes.last() {
-                Some(AstNode::UserMention {
-                    parsed_user_name, ..
-                }) => (parsed_user_name, self.nicks.clone()),
-                _ => return,
+        let (needle, needle_span, haystack) = match ast.node_at_pos(self.pos) {
+            Some(node) => match &node {
+                AstNode::Command {
+                    span, parsed_name, ..
+                } => (
+                    parsed_name,
+                    span,
+                    self.commands
+                        .iter()
+                        .chain(self.local_commands.iter())
+                        .map(|x| x.clone())
+                        .collect::<Vec<String>>(),
+                ),
+                AstNode::UserMention {
+                    parsed_user_name,
+                    span,
+                    ..
+                } => (parsed_user_name, span, self.nicks.clone()),
+                // @TODO: Implement channel name autocompletion when we have channels
+                AstNode::ChannelMention { .. } => return,
+                AstNode::Text { .. } => return,
+                AstNode::Whitespace(_) => return,
             },
-            _ => return,
+            None => return,
         };
 
-        let found = haystack.iter().find(|x| x.starts_with(needle));
-        crate::log!("{found:?}");
+        let completion = haystack.iter().find(|x| x.starts_with(needle));
+
+        if let Some(found) = completion {
+            // Skip marker
+            let start = needle_span.c0 + 1;
+            let end = needle_span.c1;
+
+            self.pos = end;
+
+            for _ in start..end {
+                self.remove();
+            }
+
+            for ch in found.chars() {
+                self.insert(ch);
+            }
+        }
     }
 }
 
