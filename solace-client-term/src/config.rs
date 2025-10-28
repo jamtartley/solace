@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Context;
 use once_cell::sync::Lazy;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) static CONFIG: Lazy<Config> =
     Lazy::new(|| Config::new().expect("Failed to load configuration"));
@@ -24,12 +24,12 @@ macro_rules! config_hex_color {
     };
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Config {
     pub(crate) colors: Colors,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Colors {
     pub(crate) bg: String,
     pub(crate) channel_mention: String,
@@ -67,8 +67,41 @@ impl Config {
             }
         }
 
-        // @FIXME: Generate default config if we don't find one
+        let default_config = Self::default();
+        let config_toml = toml::to_string_pretty(&default_config)
+            .with_context(|| "ERROR: Failed to serialize default config")?;
 
-        anyhow::bail!("ERROR: No config file found!")
+        let config_path = base_path
+            .place_config_file("config.toml")
+            .with_context(|| "ERROR: Failed to create config directory")?;
+
+        fs::write(&config_path, config_toml)
+            .with_context(|| format!("ERROR: Failed to write default config to {config_path:?}"))?;
+
+        Ok(default_config)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            colors: Colors {
+                bg: "#282a36".to_string(),
+                fg: "#f8f8f2".to_string(),
+                message: "#f8f8f2".to_string(),
+                user_name: "#8be9fd".to_string(),
+                user_mention: "#ffb86c".to_string(),
+                channel_mention: "#50fa7b".to_string(),
+                timestamp_bg: "#44475a".to_string(),
+                timestamp_fg: "#bd93f9".to_string(),
+                topic_bg: "#44475a".to_string(),
+                topic_fg: "#ff79c6".to_string(),
+                prompt_nick: "#8be9fd".to_string(),
+                server_message: "#6272a4".to_string(),
+                command: "#ff5555".to_string(),
+                error_bg: "#ff5555".to_string(),
+                error_fg: "#f8f8f2".to_string(),
+            },
+        }
     }
 }
